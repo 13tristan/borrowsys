@@ -27,6 +27,6 @@ coverage/
 # Compiled files
 *.pyc
 *.class
-*.jar
 out/
 bin/
+borrowsys.iml
