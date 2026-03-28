@@ -39,6 +39,11 @@ If you do not already have the Connector/J driver:
 * Once downloaded, locate the `.jar` file.
 * Copy and paste the `.jar` file into the `lib` folder you created earlier.
 
----
 
-You're now ready to proceed with the project setup.
+### 5. Configure IntelliJ IDEA to Recognize the JAR
+
+* Open your project in IntelliJ IDEA.
+* Go to File → Project Structure → Modules.
+* Select your module (usually the project name) and go to the Dependencies tab.
+* Click the + button → JARs or directories.
+* Navigate to the lib folder inside the project and select the Connector/J .jar file.
