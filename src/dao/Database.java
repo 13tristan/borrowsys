@@ -9,7 +9,7 @@ import java.sql.SQLException;
 import com.mysql.cj.protocol.Resultset;
 
 public class Database {
-    private static final String URL = "jdbc:mysql://localhost:3306/borrowsys";
+    private static final String URL = "jdbc:mysql://localhost:3306/borrow_sys";
     private static final String USER = "root";
     private static final String PASSWORD = "";
 
