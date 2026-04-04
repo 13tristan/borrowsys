@@ -36,7 +36,7 @@ public class BorrowerUI {
         }
     }
 
-    // ─── UI-B1: REQUEST TO BORROW ITEMS (NO QUANTITY - EACH ITEM IS UNIQUE) ─────
+    // ─── UI-B1: REQUEST TO BORROW ITEMS ─────
     public static void requestToBorrow(DataClasses.User user, Scanner sc) {
         try {
             // First, show available items
@@ -192,7 +192,7 @@ public class BorrowerUI {
         }
     }
 
-    // ─── UI-B2: VIEW AVAILABLE ITEMS (SHOWING EACH UNIQUE ITEM) ─────────────────
+    // ─── UI-B2: VIEW AVAILABLE ITEMS  ─────────────────
     public static void viewAvailableItems() {
         System.out.println("\n--- AVAILABLE ITEMS (Borrow by Item ID) ---");
         System.out.println("  Note: Each item has a unique ID. Borrow them individually.\n");
@@ -247,7 +247,7 @@ public class BorrowerUI {
         }
     }
 
-    // ─── UI-B3: VIEW MY BORROW HISTORY (NO QUANTITY) ────────────────────────────
+    // ─── UI-B3: VIEW MY BORROW HISTORY  ────────────────────────────
     public static void viewBorrowHistory(DataClasses.User user) {
         System.out.println("\n--- MY BORROW HISTORY ---");
 

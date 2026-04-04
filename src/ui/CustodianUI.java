@@ -1206,7 +1206,6 @@ public class CustodianUI {
     }
 
     // Approve request and convert to borrow record
-    // Approve request and convert to borrow record
     private static void approveAndCheckout(Scanner sc, DataClasses.User custodian, int requestId) {
         System.out.println("\n--- APPROVING REQUEST #" + requestId + " ---");
 
@@ -1268,7 +1267,7 @@ public class CustodianUI {
                 return;
             }
 
-            // FIX: Truncate purpose if too long (max 100 characters to be safe)
+            // Truncate purpose if too long (max 100 characters to be safe)
             String fullPurpose = purpose;
             if (purposeRef != null && !purposeRef.isEmpty()) {
                 fullPurpose = purpose + ": " + purposeRef;
@@ -1278,7 +1277,7 @@ public class CustodianUI {
                 fullPurpose = fullPurpose.substring(0, 97) + "...";
             }
 
-            // FIX: Limit remarks as well
+            // Limit remarks as well
             String remarks = "Approved from request #" + requestId;
             if (remarks.length() > 100) {
                 remarks = remarks.substring(0, 97) + "...";
