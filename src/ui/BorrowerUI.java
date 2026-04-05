@@ -1,6 +1,9 @@
 package ui;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Scanner;
 
 import dao.Database;
@@ -8,317 +11,161 @@ import models.DataClasses;
 
 public class BorrowerUI {
 
-    // ─── MENU ────────────────────────────────────────────────────────────────
-    public static void menu(DataClasses.User user, Scanner sc) {
-        boolean back = false;
+   // ─── MENU ────────────────────────────────────────────────────────────────
+   public static void menu(DataClasses.User user, Scanner sc) {
+      boolean back = false;
 
-        System.out.println("\n  Welcome, " + user.getFullName());
-        while (!back) {
-            System.out.println("\n╔══════════════════════════════════════════════╗");
-            System.out.println("║          BORROWER MENU                       ║");
-            System.out.println("╠══════════════════════════════════════════════╣");
-            System.out.println("║  [1] Request to Borrow Items                 ║");
-            System.out.println("║  [2] View Available Items                    ║");
-            System.out.println("║  [3] View My Borrow History                  ║");
-            System.out.println("║  [4] View My Pending Requests                ║");
-            System.out.println("║  [0] Logout                                  ║");
-            System.out.println("╚══════════════════════════════════════════════╝");
-            System.out.print("  Choice: ");
-            String choice = sc.nextLine().trim();
-            switch (choice) {
-                case "1" -> requestToBorrow(user, sc);
-                case "2" -> viewAvailableItems();
-                case "3" -> viewBorrowHistory(user);
-                case "4" -> viewPendingRequests(user);
-                case "0" -> back = true;
-                default  -> System.out.println("  Invalid choice.");
-            }
-        }
-    }
+      System.out.println("\n  Welcome, " + user.getFullName());
+      while (!back) {
+         System.out.println("\n╔══════════════════════════════════════════════╗");
+         System.out.println("║          BORROWER MENU                       ║");
+         System.out.println("╠══════════════════════════════════════════════╣");
+         System.out.println("║  [1] View Available Items                    ║");
+         System.out.println("║  [2] View My Borrow History                  ║");
+         System.out.println("║  [3] View My Pending Requests                ║");
+         System.out.println("║  [0] Logout                                  ║");
+         System.out.println("╚══════════════════════════════════════════════╝");
+         System.out.print("  Choice: ");
+         String choice = sc.nextLine().trim();
+         switch (choice) {
+            case "1" -> viewAvailableItems();
+            case "2" -> viewBorrowHistory(user);
+            case "3" -> viewPendingRequests(user);
+            case "0" -> back = true;
+            default -> System.out.println("  Invalid choice.");
+         }
+      }
+   }
 
-    // ─── UI-B1: REQUEST TO BORROW ITEMS ─────
-    public static void requestToBorrow(DataClasses.User user, Scanner sc) {
-        try {
-            // First, show available items
-            System.out.println("\n--- AVAILABLE ITEMS FOR BORROWING ---");
-            viewAvailableItems();
+   // ─── UI-B2: VIEW AVAILABLE ITEMS ─────────────────
+   public static void viewAvailableItems() {
+      System.out.println("\n--- AVAILABLE ITEMS (Borrow by Item ID) ---");
+      System.out.println("  Note: Each item has a unique ID. Borrow them individually.\n");
 
-            System.out.print("\nEnter purpose (Class/Event/Other): ");
-            String purpose = sc.nextLine().trim();
-            if (purpose.isEmpty()) {
-                System.out.println("  Purpose cannot be empty.");
-                return;
-            }
+      String sql = """
+            SELECT DISTINCT i.item_id, i.barcode, i.item_name, i.item_type,
+                   i.model, i.tag, i.condition_status, i.availability_status
+            FROM ITEM i
+            WHERE i.availability_status = 'Available'
+              AND i.condition_status NOT IN ('Damaged', 'Under Maintenance')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM BORROW_ITEM bi
+                  JOIN BORROW_RECORD br ON bi.borrow_id = br.borrow_id
+                  WHERE bi.item_id = i.item_id
+                    AND br.status IN ('Borrowed', 'Overdue')
+              )
+            ORDER BY i.item_type, i.item_name
+            """;
 
-            System.out.print("Enter purpose reference (e.g., class code or event name): ");
-            String purposeRef = sc.nextLine().trim();
-            if (purposeRef.isEmpty()) {
-                purposeRef = "General";
-            }
+      try (Connection conn = Database.getConnection();
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ResultSet rs = ps.executeQuery()) {
 
-            System.out.print("How many different items to borrow? ");
-            String itemCountInput = sc.nextLine().trim();
+         printLine();
+         System.out.printf("  %-6s %-14s %-30s %-15s %-15s %-10s %-15s%n",
+               "Item ID", "Barcode", "Item Name", "Type", "Model", "Condition", "Status");
+         printLine();
 
-            int itemCount = 0;
-            try {
-                itemCount = Integer.parseInt(itemCountInput);
-                if (itemCount <= 0) {
-                    System.out.println("  Please enter a positive number.");
-                    return;
-                }
-                if (itemCount > 20) {
-                    System.out.println("  Maximum 20 items per request.");
-                    return;
-                }
-            } catch (NumberFormatException e) {
-                System.out.println("  Invalid number. Please enter a valid number.");
-                return;
-            }
+         int count = 0;
+         while (rs.next()) {
+            System.out.printf("  %-6d %-14s %-30s %-15s %-15s %-10s %-15s%n",
+                  rs.getInt("item_id"),
+                  rs.getString("barcode"),
+                  truncate(rs.getString("item_name"), 30),
+                  rs.getString("item_type"),
+                  rs.getString("model") == null ? "N/A" : truncate(rs.getString("model"), 15),
+                  rs.getString("condition_status"),
+                  rs.getString("availability_status"));
+            count++;
+         }
+         printLine();
+         System.out.println("  Total available items: " + count);
+         System.out.println("\n  To borrow, enter the exact Item ID shown above.");
 
-            // Collect item IDs first (validate before database operation)
-            java.util.ArrayList<Integer> itemIds = new java.util.ArrayList<>();
+         if (count == 0) {
+            System.out.println("\n  No items available for borrowing at this time.");
+         }
 
-            for (int i = 0; i < itemCount; i++) {
-                System.out.println("\n--- Item " + (i+1) + " of " + itemCount + " ---");
+      } catch (SQLException e) {
+         System.out.println("  [DB ERROR] " + e.getMessage());
+      }
+   }
 
-                System.out.print("Enter Item ID to borrow: ");
-                String itemIdInput = sc.nextLine().trim();
-                int itemId;
-                try {
-                    itemId = Integer.parseInt(itemIdInput);
-                    if (itemId <= 0) {
-                        System.out.println("  Invalid Item ID.");
-                        return;
-                    }
-                } catch (NumberFormatException e) {
-                    System.out.println("  Invalid Item ID. Please enter a number.");
-                    return;
-                }
+   // ─── UI-B3: VIEW MY BORROW HISTORY ────────────────────────────
+   public static void viewBorrowHistory(DataClasses.User user) {
+      System.out.println("\n--- MY BORROW HISTORY ---");
 
-                // Check if item exists and is available
-                try (Connection conn = Database.getConnection()) {
-                    String checkSql = "SELECT availability_status, condition_status, item_name FROM ITEM WHERE item_id = ?";
-                    PreparedStatement checkPs = conn.prepareStatement(checkSql);
-                    checkPs.setInt(1, itemId);
-                    ResultSet checkRs = checkPs.executeQuery();
+      String sql = """
+            SELECT br.borrow_id, br.borrow_date, br.return_date,
+                   br.purpose, br.status,
+                   GROUP_CONCAT(DISTINCT i.item_name SEPARATOR ', ') AS items,
+                   GROUP_CONCAT(DISTINCT i.item_id SEPARATOR ', ') AS item_ids
+            FROM BORROW_RECORD br
+            LEFT JOIN BORROW_ITEM bi ON br.borrow_id = bi.borrow_id
+            LEFT JOIN ITEM i ON bi.item_id = i.item_id
+            WHERE br.borrower_id = ?
+            GROUP BY br.borrow_id, br.borrow_date, br.return_date, br.purpose, br.status
+            ORDER BY br.borrow_date DESC
+            """;
 
-                    if (checkRs.next()) {
-                        String availability = checkRs.getString("availability_status");
-                        String condition = checkRs.getString("condition_status");
-                        String itemName = checkRs.getString("item_name");
+      try (Connection conn = Database.getConnection();
+            PreparedStatement ps = conn.prepareStatement(sql)) {
 
-                        if (!"Available".equals(availability)) {
-                            System.out.println("  ✘ Item '" + itemName + "' is not available (Status: " + availability + ")");
-                            return;
-                        }
+         ps.setInt(1, user.userId);
 
-                        if ("Damaged".equals(condition) || "Under Maintenance".equals(condition)) {
-                            System.out.println("  ✘ Item '" + itemName + "' is " + condition + " and cannot be borrowed");
-                            return;
-                        }
-
-                        // Check if same item was already requested in this session
-                        if (itemIds.contains(itemId)) {
-                            System.out.println("  ✘ You already requested Item ID " + itemId + ". Each item can only be borrowed once per request.");
-                            return;
-                        }
-
-                        System.out.println("  ✓ Item '" + itemName + "' (ID: " + itemId + ") is available.");
-                        itemIds.add(itemId);
-                    } else {
-                        System.out.println("  ✘ Item ID " + itemId + " not found.");
-                        return;
-                    }
-                } catch (SQLException e) {
-                    System.out.println("  [DB ERROR] " + e.getMessage());
-                    return;
-                }
-            }
-
-            // All items validated, now create the request
-            try (Connection conn = Database.getConnection()) {
-                conn.setAutoCommit(false);
-
-                // Insert into BORROW_REQUEST
-                String insertRequest = """
-                INSERT INTO BORROW_REQUEST (borrower_id, request_date, purpose, purpose_ref, status)
-                VALUES (?, CURDATE(), ?, ?, 'Pending')
-                """;
-
-                PreparedStatement ps1 = conn.prepareStatement(insertRequest, Statement.RETURN_GENERATED_KEYS);
-                ps1.setInt(1, user.userId);
-                ps1.setString(2, purpose);
-                ps1.setString(3, purposeRef);
-                ps1.executeUpdate();
-
-                ResultSet generatedKeys = ps1.getGeneratedKeys();
-                int requestId = 0;
-                if (generatedKeys.next()) {
-                    requestId = generatedKeys.getInt(1);
-                } else {
-                    System.out.println("  Failed to create request.");
-                    conn.rollback();
-                    return;
-                }
-
-                // Insert each item into REQUEST_ITEM (quantity = 1 since each item is unique)
-                for (int itemId : itemIds) {
-                    String insertItem = """
-                    INSERT INTO REQUEST_ITEM (request_id, item_id, quantity)
-                    VALUES (?, ?, 1)
-                    """;
-
-                    PreparedStatement ps2 = conn.prepareStatement(insertItem);
-                    ps2.setInt(1, requestId);
-                    ps2.setInt(2, itemId);
-                    ps2.executeUpdate();
-
-                    System.out.println("  ✓ Requested: Item ID " + itemId);
-                }
-
-                conn.commit();
-                System.out.println("\n✔ REQUEST SUBMITTED SUCCESSFULLY!");
-                System.out.println("  Request #" + requestId + " is pending custodian approval.");
-                System.out.println("  Requested items: " + itemIds.size() + " item(s)");
-
-            } catch (SQLException e) {
-                System.out.println("  [DB ERROR] " + e.getMessage());
-                e.printStackTrace();
-            }
-
-        } catch (Exception e) {
-            System.out.println("  [ERROR] " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-
-    // ─── UI-B2: VIEW AVAILABLE ITEMS  ─────────────────
-    public static void viewAvailableItems() {
-        System.out.println("\n--- AVAILABLE ITEMS (Borrow by Item ID) ---");
-        System.out.println("  Note: Each item has a unique ID. Borrow them individually.\n");
-
-        String sql = """
-        SELECT DISTINCT i.item_id, i.barcode, i.item_name, i.item_type,
-               i.model, i.tag, i.condition_status, i.availability_status
-        FROM ITEM i
-        WHERE i.availability_status = 'Available'
-          AND i.condition_status NOT IN ('Damaged', 'Under Maintenance')
-          AND NOT EXISTS (
-              SELECT 1 
-              FROM BORROW_ITEM bi 
-              JOIN BORROW_RECORD br ON bi.borrow_id = br.borrow_id
-              WHERE bi.item_id = i.item_id 
-                AND br.status IN ('Borrowed', 'Overdue')
-          )
-        ORDER BY i.item_type, i.item_name
-        """;
-
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
+         try (ResultSet rs = ps.executeQuery()) {
 
             printLine();
-            System.out.printf("  %-6s %-14s %-30s %-15s %-15s %-10s %-15s%n",
-                    "Item ID", "Barcode", "Item Name", "Type", "Model", "Condition", "Status");
+            System.out.printf("%-8s %-12s %-12s %-12s %-12s %-40s%n",
+                  "Borr ID", "Borrow Date", "Return Date", "Purpose", "Status", "Items Borrowed");
             printLine();
 
             int count = 0;
             while (rs.next()) {
-                System.out.printf("  %-6d %-14s %-30s %-15s %-15s %-10s %-15s%n",
-                        rs.getInt("item_id"),
-                        rs.getString("barcode"),
-                        truncate(rs.getString("item_name"), 30),
-                        rs.getString("item_type"),
-                        rs.getString("model") == null ? "N/A" : truncate(rs.getString("model"), 15),
-                        rs.getString("condition_status"),
-                        rs.getString("availability_status"));
-                count++;
+               String returnDate = rs.getString("return_date");
+               if (returnDate == null)
+                  returnDate = "Not returned";
+
+               String items = rs.getString("items");
+               if (items == null)
+                  items = "No items";
+
+               String itemIds = rs.getString("item_ids");
+               if (itemIds != null && !itemIds.isEmpty()) {
+                  items = items + " (IDs: " + itemIds + ")";
+               }
+
+               System.out.printf("%-8d %-12s %-12s %-12s %-12s %-40s%n",
+                     rs.getInt("borrow_id"),
+                     rs.getString("borrow_date"),
+                     returnDate,
+                     truncate(rs.getString("purpose"), 12),
+                     rs.getString("status"),
+                     items.length() > 40 ? items.substring(0, 37) + "..." : items);
+               count++;
             }
             printLine();
-            System.out.println("  Total available items: " + count);
-            System.out.println("\n  To borrow, enter the exact Item ID shown above.");
 
             if (count == 0) {
-                System.out.println("\n  No items available for borrowing at this time.");
+               System.out.println("\n  You have no borrow history yet.");
+            } else {
+               System.out.println("  Total records: " + count);
             }
+         }
 
-        } catch (SQLException e) {
-            System.out.println("  [DB ERROR] " + e.getMessage());
-        }
-    }
+      } catch (SQLException e) {
+         System.out.println("  [DB ERROR] " + e.getMessage());
+      }
+   }
 
-    // ─── UI-B3: VIEW MY BORROW HISTORY  ────────────────────────────
-    public static void viewBorrowHistory(DataClasses.User user) {
-        System.out.println("\n--- MY BORROW HISTORY ---");
+   // ─── UI-B4: VIEW PENDING REQUESTS ────────────────────────────────────────
+   public static void viewPendingRequests(DataClasses.User user) {
+      System.out.println("\n--- MY PENDING BORROW REQUESTS ---");
 
-        String sql = """
-        SELECT br.borrow_id, br.borrow_date, br.return_date, 
-               br.purpose, br.status,
-               GROUP_CONCAT(DISTINCT i.item_name SEPARATOR ', ') AS items,
-               GROUP_CONCAT(DISTINCT i.item_id SEPARATOR ', ') AS item_ids
-        FROM BORROW_RECORD br
-        LEFT JOIN BORROW_ITEM bi ON br.borrow_id = bi.borrow_id
-        LEFT JOIN ITEM i ON bi.item_id = i.item_id
-        WHERE br.borrower_id = ?
-        GROUP BY br.borrow_id, br.borrow_date, br.return_date, br.purpose, br.status
-        ORDER BY br.borrow_date DESC
-        """;
-
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setInt(1, user.userId);
-
-            try (ResultSet rs = ps.executeQuery()) {
-
-                printLine();
-                System.out.printf("%-8s %-12s %-12s %-12s %-12s %-40s%n",
-                        "Borr ID", "Borrow Date", "Return Date", "Purpose", "Status", "Items Borrowed");
-                printLine();
-
-                int count = 0;
-                while (rs.next()) {
-                    String returnDate = rs.getString("return_date");
-                    if (returnDate == null) returnDate = "Not returned";
-
-                    String items = rs.getString("items");
-                    if (items == null) items = "No items";
-
-                    String itemIds = rs.getString("item_ids");
-                    if (itemIds != null && !itemIds.isEmpty()) {
-                        items = items + " (IDs: " + itemIds + ")";
-                    }
-
-                    System.out.printf("%-8d %-12s %-12s %-12s %-12s %-40s%n",
-                            rs.getInt("borrow_id"),
-                            rs.getString("borrow_date"),
-                            returnDate,
-                            truncate(rs.getString("purpose"), 12),
-                            rs.getString("status"),
-                            items.length() > 40 ? items.substring(0, 37) + "..." : items);
-                    count++;
-                }
-                printLine();
-
-                if (count == 0) {
-                    System.out.println("\n  You have no borrow history yet.");
-                } else {
-                    System.out.println("  Total records: " + count);
-                }
-            }
-
-        } catch (SQLException e) {
-            System.out.println("  [DB ERROR] " + e.getMessage());
-        }
-    }
-
-    // ─── UI-B4: VIEW PENDING REQUESTS ────────────────────────────────────────
-    public static void viewPendingRequests(DataClasses.User user) {
-        System.out.println("\n--- MY PENDING BORROW REQUESTS ---");
-
-        String sql = """
+      String sql = """
             SELECT br.request_id, br.request_date, br.purpose, br.purpose_ref, br.status,
-                   GROUP_CONCAT(CONCAT(i.item_name, ' (x', ri.quantity, ')') 
+                   GROUP_CONCAT(CONCAT(i.item_name, ' (x', ri.quantity, ')')
                                 SEPARATOR ', ') AS items
             FROM BORROW_REQUEST br
             LEFT JOIN REQUEST_ITEM ri ON br.request_id = ri.request_id
@@ -328,55 +175,58 @@ public class BorrowerUI {
             ORDER BY br.request_date DESC
             """;
 
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+      try (Connection conn = Database.getConnection();
+            PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            ps.setInt(1, user.userId);
+         ps.setInt(1, user.userId);
 
-            try (ResultSet rs = ps.executeQuery()) {
+         try (ResultSet rs = ps.executeQuery()) {
 
-                printLine();
-                System.out.printf("%-8s %-12s %-12s %-20s %-50s%n",
-                        "Req ID", "Request Date", "Purpose", "Status", "Items Requested");
-                printLine();
+            printLine();
+            System.out.printf("%-8s %-12s %-12s %-20s %-50s%n",
+                  "Req ID", "Request Date", "Purpose", "Status", "Items Requested");
+            printLine();
 
-                int count = 0;
-                while (rs.next()) {
-                    String items = rs.getString("items");
-                    if (items == null) items = "No items";
+            int count = 0;
+            while (rs.next()) {
+               String items = rs.getString("items");
+               if (items == null)
+                  items = "No items";
 
-                    System.out.printf("%-8d %-12s %-12s %-20s %-50s%n",
-                            rs.getInt("request_id"),
-                            rs.getString("request_date"),
-                            truncate(rs.getString("purpose"), 12),
-                            rs.getString("status"),
-                            items.length() > 50 ? items.substring(0, 47) + "..." : items);
-                    count++;
-                }
-                printLine();
-
-                if (count == 0) {
-                    System.out.println("\n  You have no pending requests.");
-                } else {
-                    System.out.println("  Total pending requests: " + count);
-                    System.out.println("\n  Note: Wait for custodian approval. Once approved,");
-                    System.out.println("        the custodian will check out the items for you.");
-                }
+               System.out.printf("%-8d %-12s %-12s %-20s %-50s%n",
+                     rs.getInt("request_id"),
+                     rs.getString("request_date"),
+                     truncate(rs.getString("purpose"), 12),
+                     rs.getString("status"),
+                     items.length() > 50 ? items.substring(0, 47) + "..." : items);
+               count++;
             }
+            printLine();
 
-        } catch (SQLException e) {
-            System.out.println("  [DB ERROR] " + e.getMessage());
-        }
-    }
+            if (count == 0) {
+               System.out.println("\n  You have no pending requests.");
+            } else {
+               System.out.println("  Total pending requests: " + count);
+               System.out.println("\n  Note: Wait for custodian approval. Once approved,");
+               System.out.println("        the custodian will check out the items for you.");
+            }
+         }
 
-    // ─── HELPER METHODS ──────────────────────────────────────────────────────
-    private static void printLine() {
-        System.out.println("  " + "─".repeat(140));
-    }
+      } catch (SQLException e) {
+         System.out.println("  [DB ERROR] " + e.getMessage());
+      }
+   }
 
-    private static String truncate(String s, int maxLen) {
-        if (s == null) return "N/A";
-        if (s.length() <= maxLen) return s;
-        return s.substring(0, maxLen - 3) + "...";
-    }
+   // ─── HELPER METHODS ──────────────────────────────────────────────────────
+   private static void printLine() {
+      System.out.println("  " + "─".repeat(140));
+   }
+
+   private static String truncate(String s, int maxLen) {
+      if (s == null)
+         return "N/A";
+      if (s.length() <= maxLen)
+         return s;
+      return s.substring(0, maxLen - 3) + "...";
+   }
 }
