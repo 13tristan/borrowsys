@@ -28,7 +28,7 @@ public class CustodianUI {
          System.out.println("║  [6]  Log Returned Items (with damage/issues)                      ║");
          System.out.println("║  [7]  View Borrow Status (by Class or Event)                       ║");
          System.out.println("║  [8]  View Borrowers with Unreturned Items / Returns with Issues   ║");
-         System.out.println("║  [9] View All Items / Equipment Status                            ║");
+         System.out.println("║  [9]  View All Items / Equipment Status                            ║");
          System.out.println("║  [10] View All Borrow Records                                      ║");
          System.out.println("║  [11] Approve/Process Borrower Requests                            ║");
          System.out.println("║  [0]  Logout                                                       ║");
