@@ -24,14 +24,13 @@ public class CustodianUI {
          System.out.println("║  [2]  Extract Student Data (Currently Enrolled)                    ║");
          System.out.println("║  [3]  Extract / Input CIS Staff and Faculty                        ║");
          System.out.println("║  [4]  Extract Laboratory Classes (with students)                   ║");
-         System.out.println("║  [5]  Input Request Data for Non-Class Activities                  ║");
-         System.out.println("║  [6]  Log Borrowed Items (Class or Event)                          ║");
-         System.out.println("║  [7]  Log Returned Items (with damage/issues)                      ║");
-         System.out.println("║  [8]  View Borrow Status (by Class or Event)                       ║");
-         System.out.println("║  [9]  View Borrowers with Unreturned Items / Returns with Issues   ║");
-         System.out.println("║  [10] View All Items / Equipment Status                            ║");
-         System.out.println("║  [11] View All Borrow Records                                      ║");
-         System.out.println("║  [12] Approve/Process Borrower Requests                            ║");
+         System.out.println("║  [5]  Log Borrowed Items (Class or Event)                          ║");
+         System.out.println("║  [6]  Log Returned Items (with damage/issues)                      ║");
+         System.out.println("║  [7]  View Borrow Status (by Class or Event)                       ║");
+         System.out.println("║  [8]  View Borrowers with Unreturned Items / Returns with Issues   ║");
+         System.out.println("║  [9] View All Items / Equipment Status                            ║");
+         System.out.println("║  [10] View All Borrow Records                                      ║");
+         System.out.println("║  [11] Approve/Process Borrower Requests                            ║");
          System.out.println("║  [0]  Logout                                                       ║");
          System.out.println("╚════════════════════════════════════════════════════════════════════╝");
          System.out.print("  Choice: ");
@@ -41,14 +40,13 @@ public class CustodianUI {
             case "2" -> extractStudents();
             case "3" -> manageStaffFaculty(sc);
             case "4" -> extractLabClasses(sc);
-            case "5" -> inputNonClassActivity(sc);
-            case "6" -> logBorrowedItems(sc);
-            case "7" -> logReturnedItems(sc);
-            case "8" -> viewBorrowStatus(sc);
-            case "9" -> viewUnreturnedAndIssues();
-            case "10" -> viewAllItems();
-            case "11" -> viewAllBorrowRecords();
-            case "12" -> approveBorrowRequests(sc, user);
+            case "5" -> logBorrowedItems(sc);
+            case "6" -> logReturnedItems(sc);
+            case "7" -> viewBorrowStatus(sc);
+            case "8" -> viewUnreturnedAndIssues();
+            case "9" -> viewAllItems();
+            case "10" -> viewAllBorrowRecords();
+            case "11" -> approveBorrowRequests(sc, user);
             case "0" -> back = true;
             default -> System.out.println("  Invalid choice.");
          }
@@ -344,64 +342,6 @@ public class CustodianUI {
             }
             printLine();
             System.out.println("  Total students: " + count);
-         }
-      } catch (SQLException e) {
-         System.out.println("  [DB ERROR] " + e.getMessage());
-      }
-   }
-
-   // ─── REQUIREMENT 5: INPUT REQUEST DATA FOR NON-CLASS ACTIVITIES ───────────
-   public static void inputNonClassActivity(Scanner sc) {
-      System.out.println("\n--- INPUT NON-CLASS ACTIVITY REQUEST ---");
-
-      System.out.print("  Activity Name: ");
-      String activityName = sc.nextLine().trim();
-
-      System.out.print("  Event Type (Seminar/Workshop/Meeting/Other): ");
-      String eventType = sc.nextLine().trim();
-
-      System.out.print("  Event Date (YYYY-MM-DD): ");
-      String eventDate = sc.nextLine().trim();
-
-      System.out.print("  Event Time (HH:MM:SS): ");
-      String eventTime = sc.nextLine().trim();
-
-      System.out.print("  Location: ");
-      String location = sc.nextLine().trim();
-
-      System.out.print("  Requester ID: ");
-      int requesterId = Integer.parseInt(sc.nextLine().trim());
-
-      System.out.print("  Facility ID (optional, 0 if none): ");
-      int facilityId = Integer.parseInt(sc.nextLine().trim());
-
-      String sql = """
-            INSERT INTO ACTIVITY (activity_name, event_type, event_date, event_time,
-                                  location, requester_id, approval_status, facility_id)
-            VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?)
-            """;
-
-      try (Connection conn = Database.getConnection();
-            PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-
-         ps.setString(1, activityName);
-         ps.setString(2, eventType);
-         ps.setString(3, eventDate);
-         ps.setString(4, eventTime);
-         ps.setString(5, location);
-         ps.setInt(6, requesterId);
-         if (facilityId == 0) {
-            ps.setNull(7, java.sql.Types.INTEGER);
-         } else {
-            ps.setInt(7, facilityId);
-         }
-
-         int rows = ps.executeUpdate();
-         if (rows > 0) {
-            ResultSet keys = ps.getGeneratedKeys();
-            if (keys.next()) {
-               System.out.println("  ✓ Activity request created! Activity ID: " + keys.getInt(1));
-            }
          }
       } catch (SQLException e) {
          System.out.println("  [DB ERROR] " + e.getMessage());
