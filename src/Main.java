@@ -37,7 +37,6 @@ public class Main {
          System.out.println("║         MAIN MENU                    ║");
          System.out.println("╠══════════════════════════════════════╣");
          System.out.println("║  [1] Login                           ║");
-         System.out.println("║  [2] Register                        ║");
          System.out.println("║  [0] Exit                            ║");
          System.out.println("╚══════════════════════════════════════╝");
          System.out.print("  Choice: ");
@@ -51,9 +50,6 @@ public class Main {
                   routeToMenu(user, sc);
                }
             }
-
-            case "2" -> Auth.register(sc);
-
             case "0" -> {
                System.out.println("\n  Goodbye! Exiting the system...");
                running = false;
@@ -67,17 +63,18 @@ public class Main {
    }
 
    private static void routeToMenu(DataClasses.User user, Scanner sc) {
-        switch (user.userType) {
-            case "Custodian"   -> CustodianUI.menu(user, sc);
-            case "Admin"       -> AdminUI.menu(user, sc);
-            case "Student",
-                 "Instructor",
-                 "Staff"       -> BorrowerUI.menu(user, sc);
-            default            -> System.out.println("  Unknown user type. Access denied.");
-        }
+      switch (user.userType) {
+         case "Custodian" -> CustodianUI.menu(user, sc);
+         case "Admin" -> AdminUI.menu(user, sc);
+         case "Student",
+               "Instructor",
+               "Staff" ->
+            BorrowerUI.menu(user, sc);
+         default -> System.out.println("  Unknown user type. Access denied.");
+      }
 
-        System.out.println("\n  You have been logged out. Returning to main menu...");
-    }
+      System.out.println("\n  You have been logged out. Returning to main menu...");
+   }
 
    private static void printBanner() {
       System.out.println();
