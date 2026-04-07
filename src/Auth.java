@@ -47,7 +47,7 @@ public class Auth {
                user.accountStatus = rs.getString("account_status");
                return user;
             } else {
-               System.out.println("\n  ✘ Invalid email or password, or account is inactive.");
+               System.out.println("\n Invalid email or password, or account is inactive.");
                return null;
             }
          }

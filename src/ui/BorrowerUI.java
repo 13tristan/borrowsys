@@ -40,7 +40,6 @@ public class BorrowerUI {
    // ─── UI-B2: VIEW AVAILABLE ITEMS ─────────────────
    public static void viewAvailableItems() {
       System.out.println("\n--- AVAILABLE ITEMS (Borrow by Item ID) ---");
-      System.out.println("  Note: Each item has a unique ID. Borrow them individually.\n");
 
       String sql = """
             SELECT DISTINCT i.item_id, i.barcode, i.item_name, i.item_type,
