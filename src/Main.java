@@ -3,6 +3,7 @@ import java.util.Scanner;
 
 import dao.Database;
 import models.DataClasses;
+import service.AuthService;
 import ui.AdminUI;
 import ui.BorrowerUI;
 import ui.CustodianUI;
@@ -37,18 +38,21 @@ public class Main {
          System.out.println("║         MAIN MENU                    ║");
          System.out.println("╠══════════════════════════════════════╣");
          System.out.println("║  [1] Login                           ║");
+         System.out.println("║  [2] Register                        ║");
          System.out.println("║  [0] Exit                            ║");
          System.out.println("╚══════════════════════════════════════╝");
          System.out.print("  Choice: ");
          String choice = sc.nextLine().trim();
 
          switch (choice) {
-
             case "1" -> {
-               DataClasses.User user = Auth.login(sc);
+               DataClasses.User user = AuthService.login(sc);
                if (user != null) {
                   routeToMenu(user, sc);
                }
+            }
+            case "2" -> {
+                AuthService.register(sc);
             }
             case "0" -> {
                System.out.println("\n  Goodbye! Exiting the system...");
