@@ -5,414 +5,315 @@ import models.DataClasses;
 
 import java.sql.CallableStatement;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Types;
+import java.util.LinkedHashSet;
 import java.util.Scanner;
+import java.util.Set;
 
+/**
+ * Contains the borrower-side transaction features.
+ *
+ * Borrowers can view available items, create requests, cancel pending requests,
+ * view their active borrowed items/history, and update their own account details.
+ * Quantity is intentionally not used because each physical item is unique through
+ * item_id and barcode.
+ */
 public class BorrowerService {
 
-   // ─── VIEW AVAILABLE ITEMS ─────────────────────────────────────
+   /** Shows only items that are valid for requesting. The SQL view already filters unavailable/borrowed items. */
    public void viewAvailableItems() {
-
-      System.out.println("\n--- AVAILABLE ITEMS (Borrow by Item ID) ---");
-      System.out.println("  Note: Each item has a unique ID. Borrow them individually.\n");
-
-      String sql = "{CALL borrower_ViewAvailableItems()}";
-
-      try (
-            Connection conn = Database.getConnection();
-            CallableStatement cs = conn.prepareCall(sql);
-            ResultSet rs = cs.executeQuery()) {
-
-         printLine();
-
-         System.out.printf(
-               "  %-6s %-14s %-30s %-15s %-15s %-10s %-15s%n",
-               "Item ID", "Barcode", "Item Name",
-               "Type", "Model", "Condition", "Status");
-
-         printLine();
-
-         int count = 0;
-
-         while (rs.next()) {
-
-            System.out.printf(
-                  "  %-6d %-14s %-30s %-15s %-15s %-10s %-15s%n",
-                  rs.getInt("item_id"),
-                  rs.getString("barcode"),
-                  truncate(rs.getString("item_name"), 30),
-                  rs.getString("item_type"),
-                  rs.getString("model") == null
-                        ? "N/A"
-                        : truncate(rs.getString("model"), 15),
-                  rs.getString("condition_status"),
-                  rs.getString("availability_status"));
-
-            count++;
-         }
-
-         printLine();
-         System.out.println("  Total available items: " + count);
-
-         if (count == 0) {
-            System.out.println("\n  No items available for borrowing.");
-         }
-
-      } catch (SQLException e) {
-         System.out.println("  [DB ERROR] " + e.getMessage());
-      }
-   }
-
-   // ─── VIEW BORROW HISTORY ──────────────────────────────────────
-   public void viewBorrowHistory(DataClasses.User user) {
-
-      System.out.println("\n--- MY BORROW HISTORY ---");
-
-      String sql = "{CALL borrower_ViewBorrowHistory(?)}";
-
+      // vw_available_items simplifies the SELECT by hiding the availability rules inside the database view.
+      String sql = """
+                SELECT item_id, barcode, item_name, item_type, condition_status, availability_status
+                FROM vw_available_items
+                ORDER BY item_type, item_name
+                """;
       try (Connection conn = Database.getConnection();
-            CallableStatement cs = conn.prepareCall(sql)) {
-
-         cs.setInt(1, user.userId);
-
-         try (ResultSet rs = cs.executeQuery()) {
-
-            printLine();
-
-            System.out.printf(
-                  "%-8s %-12s %-12s %-12s %-12s %-40s%n",
-                  "Borr ID", "Borrow Date", "Return Date",
-                  "Purpose", "Status", "Items Borrowed");
-
-            printLine();
-
-            int count = 0;
-
-            while (rs.next()) {
-
-               String returnDate = rs.getString("return_date");
-               if (returnDate == null)
-                  returnDate = "Not returned";
-
-               String items = rs.getString("items");
-               if (items == null)
-                  items = "No items";
-
-               String itemIds = rs.getString("item_ids");
-               if (itemIds != null && !itemIds.isEmpty()) {
-                  items += " (IDs: " + itemIds + ")";
-               }
-
-               System.out.printf(
-                     "%-8d %-12s %-12s %-12s %-12s %-40s%n",
-                     rs.getInt("borrow_id"),
-                     rs.getString("borrow_date"),
-                     returnDate,
-                     truncate(rs.getString("purpose"), 12),
-                     rs.getString("status"),
-                     items.length() > 40
-                           ? items.substring(0, 37) + "..."
-                           : items);
-
-               count++;
-            }
-
-            printLine();
-
-            if (count == 0) {
-               System.out.println("\n  You have no borrow history yet.");
-            } else {
-               System.out.println("  Total records: " + count);
-            }
-         }
-
-      } catch (SQLException e) {
-         System.out.println("  [DB ERROR] " + e.getMessage());
+           PreparedStatement ps = conn.prepareStatement(sql);
+           ResultSet rs = ps.executeQuery()) {
+         printItems(rs, "AVAILABLE ITEMS");
+      } catch (Exception e) {
+         System.out.println("  Unable to load available items: " + AuthService.cleanMessage(e));
       }
    }
 
-   // ─── VIEW PENDING REQUESTS ────────────────────────────────────
-   public void viewPendingRequests(DataClasses.User user) {
-
-      System.out.println("\n--- MY PENDING BORROW REQUESTS ---");
-
-      String sql = "{CALL borrower_ViewPendingRequests(?)}";
-
-      try (Connection conn = Database.getConnection();
-            CallableStatement cs = conn.prepareCall(sql)) {
-
-         cs.setInt(1, user.userId);
-
-         try (ResultSet rs = cs.executeQuery()) {
-
-            printLine();
-
-            System.out.printf(
-                  "%-8s %-12s %-12s %-20s %-50s%n",
-                  "Req ID", "Request Date",
-                  "Purpose", "Status", "Items Requested");
-
-            printLine();
-
-            int count = 0;
-
-            while (rs.next()) {
-
-               String items = rs.getString("items");
-               if (items == null)
-                  items = "No items";
-
-               System.out.printf(
-                     "%-8d %-12s %-12s %-20s %-50s%n",
-                     rs.getInt("request_id"),
-                     rs.getString("request_date"),
-                     truncate(rs.getString("purpose"), 12),
-                     rs.getString("status"),
-                     items.length() > 50
-                           ? items.substring(0, 47) + "..."
-                           : items);
-
-               count++;
-            }
-
-            printLine();
-
-            if (count == 0) {
-               System.out.println("\n  You have no pending requests.");
-            } else {
-               System.out.println("  Total pending requests: " + count);
-            }
-         }
-
-      } catch (SQLException e) {
-         System.out.println("  [DB ERROR] " + e.getMessage());
-      }
-   }
-
-   // ─── CREATE BORROW REQUEST ────────────────────────────────────
+   /**
+    * Creates a new borrow request through a stored procedure.
+    * The procedure validates item existence, availability, duplicate pending requests,
+    * and the rule that a request must contain at least one item.
+    */
    public void createBorrowRequest(DataClasses.User user, Scanner sc) {
-
-      System.out.println("\n--- CREATE BORROW REQUEST ---");
-
+      System.out.println("\n  Create Borrow Request");
       viewAvailableItems();
 
-      System.out.print("\n  Enter Item IDs to borrow (comma-separated, e.g. 1,3,5): ");
-      String itemIds = sc.nextLine().trim();
-
-      if (itemIds.isEmpty()) {
-         System.out.println("  [ERROR] No items entered. Request cancelled.");
+      System.out.println("\n  Purpose: [1] Class  [2] Activity  [3] Other");
+      System.out.print("  Choice: ");
+      String purpose = switch (sc.nextLine().trim()) {
+         case "1" -> "Class";
+         case "2" -> "Activity";
+         case "3" -> "Other";
+         default -> null;
+      };
+      if (purpose == null) {
+         System.out.println("  Invalid purpose.");
          return;
       }
 
-      System.out.print("  Enter quantities for each item (same order, e.g. 1,1,2): ");
-      String quantities = sc.nextLine().trim();
-
-      if (quantities.isEmpty()) {
-         System.out.println("  [ERROR] No quantities entered. Request cancelled.");
-         return;
-      }
-
-      System.out.print("  Purpose (Class / Event / Other): ");
-      String purpose = sc.nextLine().trim();
-
-      System.out.print("  Purpose reference/details (press Enter to skip): ");
+      System.out.print("  Purpose reference (class code, event name, or short reason): ");
       String purposeRef = sc.nextLine().trim();
-      if (purposeRef.isEmpty())
-         purposeRef = null;
+      if (purposeRef.length() > 200) {
+         System.out.println("  Purpose reference must not exceed 200 characters.");
+         return;
+      }
 
-      String sql = "{CALL borrower_CreateBorrowRequest(?, ?, ?, ?, ?, ?)}";
+      // Multiple unique item IDs may be entered, but no quantity is needed because each item has its own barcode.
+      System.out.print("  Enter item ID/s to request (comma-separated, no quantity needed): ");
+      String itemIds = normalizeItemIds(sc.nextLine());
+      if (itemIds == null) return;
 
+      // Stored procedure inserts into borrow_request and request_item as one controlled transaction.
+      String sql = "{CALL borrower_CreateBorrowRequest(?, ?, ?, ?, ?)}";
       try (Connection conn = Database.getConnection();
-            CallableStatement cs = conn.prepareCall(sql)) {
-
+           // CallableStatement calls the MySQL procedure and receives the new request_id.
+           CallableStatement cs = conn.prepareCall(sql)) {
          cs.setInt(1, user.userId);
          cs.setString(2, purpose);
-         cs.setString(3, purposeRef);
+         cs.setString(3, purposeRef.isBlank() ? null : purposeRef);
          cs.setString(4, itemIds);
-         cs.setString(5, quantities);
-         cs.registerOutParameter(6, Types.INTEGER);
-
+         // OUT parameter returns the created request ID.
+         cs.registerOutParameter(5, Types.INTEGER);
          cs.execute();
-
-         int newRequestId = cs.getInt(6);
-         System.out.println("\n  [SUCCESS] Borrow request submitted! Request ID: " + newRequestId);
-         System.out.println("  Status: Pending — awaiting custodian approval.");
-
-      } catch (SQLException e) {
-         System.out.println("  [ERROR] " + e.getMessage());
+         System.out.println("  Borrow request created successfully. Request ID: " + cs.getInt(5));
+      } catch (Exception e) {
+         System.out.println("  Request was not created: " + AuthService.cleanMessage(e));
       }
    }
 
-   // ─── UPDATE BORROWED ITEM CONDITION ───────────────────────────
-   public void updateBorrowedItem(Scanner sc) {
-
-      System.out.println("\n--- UPDATE BORROWED ITEM CONDITION ---");
-
-      System.out.print("  Enter Borrow Item ID to update: ");
-      int borrowItemId;
-      try {
-         borrowItemId = Integer.parseInt(sc.nextLine().trim());
-      } catch (NumberFormatException e) {
-         System.out.println("  [ERROR] Invalid ID entered.");
-         return;
-      }
-
-      System.out.println("  Condition options: Good | Damaged | Lost");
-      System.out.print("  Enter new condition: ");
-      String condition = sc.nextLine().trim();
-
-      if (!condition.equals("Good") && !condition.equals("Damaged") && !condition.equals("Lost")) {
-         System.out.println("  [ERROR] Invalid condition. Must be Good, Damaged, or Lost.");
-         return;
-      }
-
-      String sql = "{CALL borrower_UpdateBorrowedItem(?, ?)}";
-
+   /** Displays the logged-in borrower's request records only. */
+   public void viewMyRequests(DataClasses.User user) {
+      String sql = """
+                SELECT request_id, request_date, purpose, purpose_ref, status,
+                       processed_by_name, processed_date, remarks, items
+                FROM vw_borrow_requests_detailed
+                WHERE borrower_id = ?
+                ORDER BY request_date DESC, request_id DESC
+                """;
       try (Connection conn = Database.getConnection();
-            CallableStatement cs = conn.prepareCall(sql)) {
-
-         cs.setInt(1, borrowItemId);
-         cs.setString(2, condition);
-
-         cs.execute();
-
-         System.out.println("  [SUCCESS] Item condition updated to: " + condition);
-
-      } catch (SQLException e) {
-         System.out.println("  [ERROR] " + e.getMessage());
+           PreparedStatement ps = conn.prepareStatement(sql)) {
+         // Restricts results to the currently logged-in borrower.
+         ps.setInt(1, user.userId);
+         try (ResultSet rs = ps.executeQuery()) {
+            System.out.println("\n  MY BORROW REQUESTS");
+            boolean found = false;
+            while (rs.next()) {
+               found = true;
+               System.out.printf("  Request #%d | %s | %s | Ref: %s | Status: %s%n",
+                       rs.getInt("request_id"), rs.getString("request_date"), rs.getString("purpose"),
+                       nvl(rs.getString("purpose_ref")), rs.getString("status"));
+               System.out.println("    Items: " + nvl(rs.getString("items")));
+               System.out.println("    Processed by: " + nvl(rs.getString("processed_by_name"))
+                       + " | Processed date: " + nvl(rs.getString("processed_date"))
+                       + " | Remarks: " + nvl(rs.getString("remarks")));
+            }
+            if (!found) System.out.println("  No requests found.");
+         }
+      } catch (Exception e) {
+         System.out.println("  Unable to load requests: " + AuthService.cleanMessage(e));
       }
    }
 
-   // ─── UPDATE ACCOUNT INFORMATION ───────────────────────────────
-   public void updateAccountInfo(DataClasses.User user, Scanner sc) {
+   /** Cancels a request only when it belongs to the borrower and is still Pending. */
+   public void cancelRequest(DataClasses.User user, Scanner sc) {
+      System.out.print("  Enter pending request ID to cancel: ");
+      Integer requestId = readInt(sc.nextLine());
+      if (requestId == null) {
+         System.out.println("  Invalid request ID.");
+         return;
+      }
+      // Stored procedure enforces ownership and pending-status validation before cancelling.
+      String sql = "{CALL borrower_CancelRequest(?, ?)}";
+      try (Connection conn = Database.getConnection();
+           // CallableStatement calls the MySQL procedure and receives the new request_id.
+           CallableStatement cs = conn.prepareCall(sql)) {
+         cs.setInt(1, requestId);
+         cs.setInt(2, user.userId);
+         cs.execute();
+         System.out.println("  Request cancelled successfully.");
+      } catch (Exception e) {
+         System.out.println("  Request was not cancelled: " + AuthService.cleanMessage(e));
+      }
+   }
 
-      System.out.println("\n--- UPDATE ACCOUNT INFORMATION ---");
-      System.out.println("  Current info — Name: " + user.firstName + " " + user.lastName
-            + " | Email: " + user.email);
-      System.out.println("  (Press Enter to keep current value)\n");
+   /** Shows borrow records that are still Borrowed or Overdue. */
+   public void viewActiveBorrowedItems(DataClasses.User user) {
+      String sql = """
+                SELECT borrow_id, borrow_date, purpose, status, custodian_name, items, item_count
+                FROM vw_borrow_history_details
+                WHERE borrower_id = ? AND status IN ('Borrowed', 'Overdue')
+                ORDER BY borrow_date DESC
+                """;
+      printBorrowHistory(user, sql, "ACTIVE BORROWED ITEMS");
+   }
+
+   /** Shows the complete borrow history of the logged-in borrower. */
+   public void viewBorrowHistory(DataClasses.User user) {
+      String sql = """
+                SELECT borrow_id, borrow_date, return_date, purpose, status, custodian_name, items, item_count
+                FROM vw_borrow_history_details
+                WHERE borrower_id = ?
+                ORDER BY borrow_date DESC
+                """;
+      printBorrowHistory(user, sql, "BORROW HISTORY");
+   }
+
+   /** Updates editable account fields for the logged-in borrower. */
+   public void updateAccountInfo(DataClasses.User user, Scanner sc) {
+      System.out.println("\n  Update My Account Information");
+      System.out.println("  Leave a field blank to keep the current value.");
 
       System.out.print("  First name [" + user.firstName + "]: ");
-      String firstName = sc.nextLine().trim();
-      if (firstName.isEmpty())
-         firstName = user.firstName;
+      String firstName = keepOrNew(sc.nextLine(), user.firstName, 50, "First name");
+      if (firstName == null) return;
 
       System.out.print("  Last name [" + user.lastName + "]: ");
-      String lastName = sc.nextLine().trim();
-      if (lastName.isEmpty())
-         lastName = user.lastName;
+      String lastName = keepOrNew(sc.nextLine(), user.lastName, 50, "Last name");
+      if (lastName == null) return;
 
       System.out.print("  Email [" + user.email + "]: ");
-      String email = sc.nextLine().trim();
-      if (email.isEmpty())
-         email = user.email;
+      String email = keepOrNew(sc.nextLine(), user.email, 100, "Email");
+      if (email == null) return;
 
-      System.out.print("  Contact number [" + user.contactNumber + "]: ");
-      String contactNumber = sc.nextLine().trim();
-      if (contactNumber.isEmpty())
-         contactNumber = user.contactNumber;
+      System.out.print("  Contact number [" + nvl(user.contactNumber) + "]: ");
+      String contact = keepOrNew(sc.nextLine(), user.contactNumber, 20, "Contact number");
+      if (contact == null) return;
 
-      System.out.print("  Department [" + user.department + "]: ");
-      String department = sc.nextLine().trim();
-      if (department.isEmpty())
-         department = user.department;
+      System.out.print("  Department [" + nvl(user.department) + "]: ");
+      String department = keepOrNew(sc.nextLine(), user.department, 100, "Department");
+      if (department == null) return;
 
-      System.out.print("  New password (press Enter to keep current): ");
-      String newPassword = sc.nextLine().trim();
-      String passwordParam = newPassword.isEmpty() ? null : newPassword;
+      System.out.print("  New password (blank to keep current): ");
+      String password = sc.nextLine().trim();
+      if (password.length() > 255) {
+         System.out.println("  Password must not exceed 255 characters.");
+         return;
+      }
 
+      // Procedure updates the user table and can optionally keep the current password.
       String sql = "{CALL borrower_UpdateAccountInfo(?, ?, ?, ?, ?, ?, ?)}";
-
       try (Connection conn = Database.getConnection();
-            CallableStatement cs = conn.prepareCall(sql)) {
-
+           // CallableStatement calls the MySQL procedure and receives the new request_id.
+           CallableStatement cs = conn.prepareCall(sql)) {
          cs.setInt(1, user.userId);
          cs.setString(2, firstName);
          cs.setString(3, lastName);
          cs.setString(4, email);
-         cs.setString(5, contactNumber);
+         cs.setString(5, contact);
          cs.setString(6, department);
-         if (passwordParam == null) {
-            cs.setNull(7, Types.VARCHAR);
-         } else {
-            cs.setString(7, passwordParam);
-         }
-
+         cs.setString(7, password.isBlank() ? null : password);
          cs.execute();
 
-         // Update the in-memory user object to reflect changes
          user.firstName = firstName;
          user.lastName = lastName;
          user.email = email;
-         user.contactNumber = contactNumber;
+         user.contactNumber = contact;
          user.department = department;
-
-         System.out.println("  [SUCCESS] Account information updated successfully.");
-
-      } catch (SQLException e) {
-         System.out.println("  [ERROR] " + e.getMessage());
+         System.out.println("  Account information updated successfully.");
+      } catch (Exception e) {
+         System.out.println("  Account was not updated: " + AuthService.cleanMessage(e));
       }
    }
 
-   // ─── CANCEL REQUEST ───────────────────────────────────────────
-   public void cancelRequest(DataClasses.User user, Scanner sc) {
-
-      System.out.println("\n--- CANCEL BORROW REQUEST ---");
-
-      viewPendingRequests(user);
-
-      System.out.print("\n  Enter Request ID to cancel (0 to go back): ");
-      int requestId;
-      try {
-         requestId = Integer.parseInt(sc.nextLine().trim());
-      } catch (NumberFormatException e) {
-         System.out.println("  [ERROR] Invalid ID entered.");
-         return;
-      }
-
-      if (requestId == 0)
-         return;
-
-      System.out.print("  Confirm cancellation of Request #" + requestId + "? (y/n): ");
-      String confirm = sc.nextLine().trim();
-      if (!confirm.equalsIgnoreCase("y")) {
-         System.out.println("  Cancellation aborted.");
-         return;
-      }
-
-      String sql = "{CALL borrower_CancelRequest(?, ?)}";
-
+   // Shared display method used by active borrowed items and full history features.
+   private void printBorrowHistory(DataClasses.User user, String sql, String heading) {
       try (Connection conn = Database.getConnection();
-            CallableStatement cs = conn.prepareCall(sql)) {
-
-         cs.setInt(1, requestId);
-         cs.setInt(2, user.userId);
-
-         cs.execute();
-
-         System.out.println("  [SUCCESS] Request #" + requestId + " has been cancelled.");
-
-      } catch (SQLException e) {
-         System.out.println("  [ERROR] " + e.getMessage());
+           PreparedStatement ps = conn.prepareStatement(sql)) {
+         // Restricts results to the currently logged-in borrower.
+         ps.setInt(1, user.userId);
+         try (ResultSet rs = ps.executeQuery()) {
+            System.out.println("\n  " + heading);
+            boolean found = false;
+            while (rs.next()) {
+               found = true;
+               System.out.printf("  Borrow #%d | %s | Purpose: %s | Status: %s | Items: %d%n",
+                       rs.getInt("borrow_id"), rs.getString("borrow_date"), rs.getString("purpose"),
+                       rs.getString("status"), rs.getInt("item_count"));
+               System.out.println("    Custodian: " + nvl(rs.getString("custodian_name")));
+               System.out.println("    Items: " + nvl(rs.getString("items")));
+            }
+            if (!found) System.out.println("  No records found.");
+         }
+      } catch (Exception e) {
+         System.out.println("  Unable to load borrow records: " + AuthService.cleanMessage(e));
       }
    }
 
-   // ─── HELPERS ──────────────────────────────────────────────────
-   private void printLine() {
-      System.out.println("  " + "─".repeat(140));
+   /**
+    * Validates and normalizes comma-separated item IDs.
+    * LinkedHashSet removes duplicate IDs while preserving the order entered by the user.
+    */
+   static String normalizeItemIds(String input) {
+      if (input == null || input.trim().isBlank()) {
+         System.out.println("  At least one item must be selected.");
+         return null;
+      }
+      String[] parts = input.split(",");
+      Set<Integer> ids = new LinkedHashSet<>();
+      for (String part : parts) {
+         Integer id = readInt(part.trim());
+         if (id == null || id <= 0) {
+            System.out.println("  Invalid item ID: " + part);
+            return null;
+         }
+         ids.add(id);
+      }
+      if (ids.isEmpty()) {
+         System.out.println("  At least one item must be selected.");
+         return null;
+      }
+      StringBuilder sb = new StringBuilder();
+      for (Integer id : ids) {
+         if (sb.length() > 0) sb.append(',');
+         sb.append(id);
+      }
+      return sb.toString();
    }
 
-   private String truncate(String s, int maxLen) {
-
-      if (s == null) {
-         return "N/A";
+   // Safely converts text input to Integer; returns null instead of crashing on invalid input.
+   static Integer readInt(String value) {
+      try {
+         return Integer.parseInt(value.trim());
+      } catch (Exception e) {
+         return null;
       }
+   }
 
-      if (s.length() <= maxLen) {
-         return s;
+   // Used by update forms: blank input means keep the current value.
+   static String keepOrNew(String input, String current, int maxLength, String label) {
+      String value = input.trim().isBlank() ? current : input.trim();
+      if (value != null && value.length() > maxLength) {
+         System.out.println("  " + label + " must not exceed " + maxLength + " characters.");
+         return null;
       }
+      return value;
+   }
 
-      return s.substring(0, maxLen - 3) + "...";
+   // Shared item display helper used by Borrower, Custodian, and Admin views.
+   static void printItems(ResultSet rs, String heading) throws Exception {
+      System.out.println("\n  " + heading);
+      boolean found = false;
+      while (rs.next()) {
+         found = true;
+         System.out.printf("  [%d] %-25s | Barcode: %-14s | Type: %-10s | Condition: %-12s | Status: %s%n",
+                 rs.getInt("item_id"), rs.getString("item_name"), rs.getString("barcode"),
+                 rs.getString("item_type"), rs.getString("condition_status"), rs.getString("availability_status"));
+      }
+      if (!found) System.out.println("  No items found.");
+   }
+
+   // Converts null/blank database values into N/A for cleaner console output.
+   static String nvl(String value) {
+      return value == null || value.isBlank() ? "N/A" : value;
    }
 }
