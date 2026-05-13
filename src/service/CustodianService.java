@@ -3,9 +3,12 @@ package service;
 import dao.Database;
 
 import java.sql.Connection;
+import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
 import java.util.Scanner;
 
 public class CustodianService {
@@ -771,6 +774,649 @@ public class CustodianService {
             return "Activity ID: " + activityId;
         }
         return "Activity ID: " + activityId;
+    }
+
+
+    public static void processBorrowRequest(models.DataClasses.User user, Scanner sc) {
+        System.out.println("\n--- PROCESS BORROW REQUEST ---");
+        viewPendingRequests();
+
+        System.out.print("\n  Enter Request ID to process (or 0 to cancel): ");
+        int requestId;
+        try {
+            requestId = Integer.parseInt(sc.nextLine().trim());
+        } catch (NumberFormatException e) {
+            System.out.println("  [INPUT ERROR] Please enter a valid Request ID.");
+            return;
+        }
+
+        if (requestId == 0) {
+            System.out.println("  Processing cancelled.");
+            return;
+        }
+
+        System.out.print("  Decision [A = Approve / R = Reject]: ");
+        String input = sc.nextLine().trim().toUpperCase();
+        String decision;
+        if (input.equals("A")) {
+            decision = "Approved";
+        } else if (input.equals("R")) {
+            decision = "Rejected";
+        } else {
+            System.out.println("  [INPUT ERROR] Decision must be A or R only.");
+            return;
+        }
+
+        System.out.print("  Remarks (press Enter to skip): ");
+        String remarks = sc.nextLine().trim();
+        if (remarks.isBlank()) {
+            remarks = decision.equals("Approved") ? "Approved and checked out by custodian." : "Rejected by custodian.";
+        }
+
+        String sql = "{CALL custodian_ProcessBorrowRequest(?, ?, ?, ?, ?)}";
+
+        try (Connection conn = Database.getConnection();
+             CallableStatement cs = conn.prepareCall(sql)) {
+
+            cs.setInt(1, requestId);
+            cs.setInt(2, user.userId);
+            cs.setString(3, decision);
+            cs.setString(4, remarks);
+            cs.registerOutParameter(5, Types.INTEGER);
+
+            cs.execute();
+
+            int borrowId = cs.getInt(5);
+            if (decision.equals("Approved")) {
+                System.out.println("  [SUCCESS] Request approved and checked out.");
+                System.out.println("  Created Borrow Record ID: " + borrowId);
+            } else {
+                System.out.println("  [SUCCESS] Request rejected successfully.");
+            }
+
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    public static void logReturnedItems(models.DataClasses.User user, Scanner sc) {
+        System.out.println("\n--- LOG RETURNED ITEMS ---");
+        viewAllBorrowRecords();
+
+        System.out.print("\n  Enter Borrow ID to log return (or 0 to cancel): ");
+        int borrowId;
+        try {
+            borrowId = Integer.parseInt(sc.nextLine().trim());
+        } catch (NumberFormatException e) {
+            System.out.println("  [INPUT ERROR] Please enter a valid Borrow ID.");
+            return;
+        }
+
+        if (borrowId == 0) {
+            System.out.println("  Return logging cancelled.");
+            return;
+        }
+
+        System.out.print("  Were there damages? (Y/N): ");
+        String damageInput = sc.nextLine().trim();
+        String hasDamage;
+        if (damageInput.equalsIgnoreCase("Y")) {
+            hasDamage = "Yes";
+        } else if (damageInput.equalsIgnoreCase("N")) {
+            hasDamage = "No";
+        } else {
+            System.out.println("  [INPUT ERROR] Please enter Y or N only.");
+            return;
+        }
+
+        System.out.print("  Condition notes: ");
+        String conditionNotes = sc.nextLine().trim();
+        if (conditionNotes.isBlank()) {
+            conditionNotes = hasDamage.equals("Yes") ? "Returned with damage/s." : "Returned in good condition.";
+        }
+
+        String damageDescription = null;
+        if (hasDamage.equals("Yes")) {
+            System.out.print("  Damage description: ");
+            damageDescription = sc.nextLine().trim();
+            if (damageDescription.isBlank()) {
+                damageDescription = "Damage reported by custodian.";
+            }
+        }
+
+        String sql = "{CALL custodian_LogReturn(?, ?, ?, ?, ?)}";
+
+        try (Connection conn = Database.getConnection();
+             CallableStatement cs = conn.prepareCall(sql)) {
+
+            cs.setInt(1, borrowId);
+            cs.setInt(2, user.userId);
+            cs.setString(3, hasDamage);
+            cs.setString(4, conditionNotes);
+            cs.setString(5, damageDescription);
+
+            cs.executeUpdate();
+
+            System.out.println("  [SUCCESS] Return logged successfully.");
+            System.out.println("  Borrow record and item availability were updated.");
+
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    public static void viewItemAvailabilitySummary() {
+        System.out.println("\n--- ITEM AVAILABILITY SUMMARY ---");
+        String sql = """
+            SELECT availability_status, condition_status, COUNT(*) AS item_count
+            FROM item
+            GROUP BY availability_status, condition_status
+            ORDER BY availability_status, condition_status
+            """;
+
+        try (Connection conn = Database.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            printLine();
+            System.out.printf("%-20s %-22s %-10s%n", "Availability", "Condition", "Count");
+            printLine();
+
+            int total = 0;
+            while (rs.next()) {
+                int count = rs.getInt("item_count");
+                System.out.printf("%-20s %-22s %-10d%n",
+                        rs.getString("availability_status"),
+                        rs.getString("condition_status"),
+                        count);
+                total += count;
+            }
+            printLine();
+            System.out.println("  Total items counted: " + total);
+            System.out.println("  JDBC interface demonstrated here: Statement");
+
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    public static void countItemsInBorrowRecord(Scanner sc) {
+        System.out.println("\n--- COUNT ITEMS IN BORROW RECORD ---");
+        System.out.print("  Enter Borrow ID: ");
+
+        int borrowId;
+        try {
+            borrowId = Integer.parseInt(sc.nextLine().trim());
+        } catch (NumberFormatException e) {
+            System.out.println("  [INPUT ERROR] Please enter a valid Borrow ID.");
+            return;
+        }
+
+        String sql = "{? = CALL fn_BorrowItemCount(?)}";
+
+        try (Connection conn = Database.getConnection();
+             CallableStatement cs = conn.prepareCall(sql)) {
+
+            cs.registerOutParameter(1, Types.INTEGER);
+            cs.setInt(2, borrowId);
+            cs.execute();
+
+            int itemCount = cs.getInt(1);
+            System.out.println("  Borrow ID " + borrowId + " has " + itemCount + " borrowed item record/s.");
+            System.out.println("  Stored function used: fn_BorrowItemCount");
+
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+
+    public static void addNewItem(Scanner sc) {
+        System.out.println("\n--- ADD EQUIPMENT / ACCESSORY / PERIPHERAL ---");
+
+        System.out.print("  Barcode: ");
+        String barcode = sc.nextLine().trim();
+        System.out.print("  Item Name: ");
+        String itemName = sc.nextLine().trim();
+        System.out.print("  Item Type [Equipment/Peripheral/Accessory]: ");
+        String itemType = normalizeChoice(sc.nextLine().trim(), "Equipment", "Peripheral", "Accessory");
+        System.out.print("  Description: ");
+        String description = emptyToNull(sc.nextLine().trim());
+        System.out.print("  Model: ");
+        String model = emptyToNull(sc.nextLine().trim());
+        System.out.print("  Tag: ");
+        String tag = emptyToNull(sc.nextLine().trim());
+        System.out.print("  Condition [Good/Damaged/Under Maintenance]: ");
+        String condition = normalizeChoice(sc.nextLine().trim(), "Good", "Damaged", "Under Maintenance");
+        System.out.print("  Date Acquired [YYYY-MM-DD, blank if unknown]: ");
+        String dateAcquired = emptyToNull(sc.nextLine().trim());
+
+        if (barcode.isBlank() || itemName.isBlank()) {
+            System.out.println("  [INPUT ERROR] Barcode and item name are required.");
+            return;
+        }
+        if (itemType == null || condition == null) {
+            System.out.println("  [INPUT ERROR] Invalid item type or condition.");
+            return;
+        }
+        if (dateAcquired != null && !dateAcquired.matches("\\d{4}-\\d{2}-\\d{2}")) {
+            System.out.println("  [INPUT ERROR] Date must follow YYYY-MM-DD.");
+            return;
+        }
+
+        String existsSql = "SELECT COUNT(*) FROM item WHERE barcode = ?";
+        String insertSql = """
+            INSERT INTO item
+                (barcode, item_name, item_type, description, model, tag, condition_status, availability_status, date_acquired)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'Available', ?)
+            """;
+
+        try (Connection conn = Database.getConnection()) {
+            try (PreparedStatement check = conn.prepareStatement(existsSql)) {
+                check.setString(1, barcode);
+                try (ResultSet rs = check.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) {
+                        System.out.println("  [VALIDATION ERROR] Barcode already exists.");
+                        return;
+                    }
+                }
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, barcode);
+                ps.setString(2, itemName);
+                ps.setString(3, itemType);
+                ps.setString(4, description);
+                ps.setString(5, model);
+                ps.setString(6, tag);
+                ps.setString(7, condition);
+                if (dateAcquired == null) {
+                    ps.setNull(8, Types.DATE);
+                } else {
+                    ps.setString(8, dateAcquired);
+                }
+
+                int affected = ps.executeUpdate();
+                if (affected > 0) {
+                    try (ResultSet keys = ps.getGeneratedKeys()) {
+                        if (keys.next()) {
+                            System.out.println("  Item added successfully. New Item ID: " + keys.getInt(1));
+                        } else {
+                            System.out.println("  Item added successfully.");
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    public static void updateItemDetails(Scanner sc) {
+        System.out.println("\n--- UPDATE ITEM DETAILS / STATUS ---");
+        viewAllItems();
+        System.out.print("\n  Enter Item ID to update: ");
+        Integer itemId = readInt(sc.nextLine().trim());
+        if (itemId == null) {
+            System.out.println("  [INPUT ERROR] Please enter a valid Item ID.");
+            return;
+        }
+
+        String selectSql = """
+            SELECT barcode, item_name, item_type, description, model, tag,
+                   condition_status, availability_status, date_acquired
+            FROM item
+            WHERE item_id = ?
+            """;
+        String updateSql = """
+            UPDATE item
+            SET barcode = ?, item_name = ?, item_type = ?, description = ?, model = ?, tag = ?,
+                condition_status = ?, availability_status = ?, date_acquired = ?
+            WHERE item_id = ?
+            """;
+
+        try (Connection conn = Database.getConnection();
+             PreparedStatement select = conn.prepareStatement(selectSql)) {
+
+            select.setInt(1, itemId);
+            try (ResultSet rs = select.executeQuery()) {
+                if (!rs.next()) {
+                    System.out.println("  [VALIDATION ERROR] Item ID not found.");
+                    return;
+                }
+
+                String oldBarcode = rs.getString("barcode");
+                String oldName = rs.getString("item_name");
+                String oldType = rs.getString("item_type");
+                String oldDescription = rs.getString("description");
+                String oldModel = rs.getString("model");
+                String oldTag = rs.getString("tag");
+                String oldCondition = rs.getString("condition_status");
+                String oldAvailability = rs.getString("availability_status");
+                String oldDate = rs.getString("date_acquired");
+
+                System.out.println("  Leave input blank to keep the current value.");
+                System.out.print("  Barcode [" + oldBarcode + "]: ");
+                String barcode = keepIfBlank(sc.nextLine().trim(), oldBarcode);
+                System.out.print("  Item Name [" + oldName + "]: ");
+                String itemName = keepIfBlank(sc.nextLine().trim(), oldName);
+                System.out.print("  Item Type [" + oldType + "] Equipment/Peripheral/Accessory: ");
+                String itemTypeInput = sc.nextLine().trim();
+                String itemType = itemTypeInput.isBlank() ? oldType : normalizeChoice(itemTypeInput, "Equipment", "Peripheral", "Accessory");
+                System.out.print("  Description [" + nullToEmpty(oldDescription) + "]: ");
+                String description = keepNullable(sc.nextLine().trim(), oldDescription);
+                System.out.print("  Model [" + nullToEmpty(oldModel) + "]: ");
+                String model = keepNullable(sc.nextLine().trim(), oldModel);
+                System.out.print("  Tag [" + nullToEmpty(oldTag) + "]: ");
+                String tag = keepNullable(sc.nextLine().trim(), oldTag);
+                System.out.print("  Condition [" + oldCondition + "] Good/Damaged/Under Maintenance: ");
+                String conditionInput = sc.nextLine().trim();
+                String condition = conditionInput.isBlank() ? oldCondition : normalizeChoice(conditionInput, "Good", "Damaged", "Under Maintenance");
+                System.out.print("  Availability [" + oldAvailability + "] Available/Borrowed: ");
+                String availabilityInput = sc.nextLine().trim();
+                String availability = availabilityInput.isBlank() ? oldAvailability : normalizeChoice(availabilityInput, "Available", "Borrowed");
+                System.out.print("  Date Acquired [" + nullToEmpty(oldDate) + "] YYYY-MM-DD: ");
+                String dateInput = sc.nextLine().trim();
+                String dateAcquired = dateInput.isBlank() ? oldDate : dateInput;
+
+                if (barcode.isBlank() || itemName.isBlank() || itemType == null || condition == null || availability == null) {
+                    System.out.println("  [INPUT ERROR] Invalid update values.");
+                    return;
+                }
+                if (dateAcquired != null && !dateAcquired.isBlank() && !dateAcquired.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                    System.out.println("  [INPUT ERROR] Date must follow YYYY-MM-DD.");
+                    return;
+                }
+
+                try (PreparedStatement update = conn.prepareStatement(updateSql)) {
+                    update.setString(1, barcode);
+                    update.setString(2, itemName);
+                    update.setString(3, itemType);
+                    update.setString(4, description);
+                    update.setString(5, model);
+                    update.setString(6, tag);
+                    update.setString(7, condition);
+                    update.setString(8, availability);
+                    if (dateAcquired == null || dateAcquired.isBlank()) {
+                        update.setNull(9, Types.DATE);
+                    } else {
+                        update.setString(9, dateAcquired);
+                    }
+                    update.setInt(10, itemId);
+
+                    int affected = update.executeUpdate();
+                    System.out.println("  Item update completed. Affected row/s: " + affected);
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    public static void deleteItemFromInventory(Scanner sc) {
+        System.out.println("\n--- DELETE ITEM FROM INVENTORY ---");
+        viewAllItems();
+        System.out.print("\n  Enter Item ID to delete: ");
+        Integer itemId = readInt(sc.nextLine().trim());
+        if (itemId == null) {
+            System.out.println("  [INPUT ERROR] Please enter a valid Item ID.");
+            return;
+        }
+
+        System.out.print("  Type DELETE to confirm: ");
+        String confirm = sc.nextLine().trim();
+        if (!confirm.equals("DELETE")) {
+            System.out.println("  Delete cancelled.");
+            return;
+        }
+
+        String activeBorrowSql = """
+            SELECT COUNT(*)
+            FROM borrow_item bi
+            JOIN borrow_record br ON bi.borrow_id = br.borrow_id
+            WHERE bi.item_id = ? AND br.status IN ('Borrowed', 'Overdue')
+            """;
+        String referenceSql = """
+            SELECT
+                (SELECT COUNT(*) FROM borrow_item WHERE item_id = ?) +
+                (SELECT COUNT(*) FROM request_item WHERE item_id = ?) AS total_refs
+            """;
+        String deleteSql = "DELETE FROM item WHERE item_id = ?";
+
+        try (Connection conn = Database.getConnection()) {
+            try (PreparedStatement ps = conn.prepareStatement(activeBorrowSql)) {
+                ps.setInt(1, itemId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) {
+                        System.out.println("  [VALIDATION ERROR] This item is currently borrowed/overdue and cannot be deleted.");
+                        return;
+                    }
+                }
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement(referenceSql)) {
+                ps.setInt(1, itemId);
+                ps.setInt(2, itemId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && rs.getInt("total_refs") > 0) {
+                        System.out.println("  [VALIDATION ERROR] This item already appears in request/borrow history.");
+                        System.out.println("  To preserve transaction history, update its condition/status instead of deleting it.");
+                        return;
+                    }
+                }
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement(deleteSql)) {
+                ps.setInt(1, itemId);
+                int affected = ps.executeUpdate();
+                if (affected == 0) {
+                    System.out.println("  [VALIDATION ERROR] Item ID not found.");
+                } else {
+                    System.out.println("  Item deleted successfully. Affected row/s: " + affected);
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    public static void createActivityEvent(models.DataClasses.User user, Scanner sc) {
+        System.out.println("\n--- CREATE ACTIVITY / EVENT REQUEST RECORD ---");
+        System.out.print("  Activity Name: ");
+        String activityName = sc.nextLine().trim();
+        System.out.print("  Event Type [Meeting/Training/Recruitment/Certification/Other]: ");
+        String eventType = emptyToNull(sc.nextLine().trim());
+        System.out.print("  Event Date [YYYY-MM-DD]: ");
+        String eventDate = sc.nextLine().trim();
+        System.out.print("  Event Time [HH:MM, blank if unknown]: ");
+        String eventTime = emptyToNull(sc.nextLine().trim());
+        if (eventTime != null && eventTime.matches("\\d{2}:\\d{2}")) {
+            eventTime += ":00";
+        }
+        System.out.print("  Location: ");
+        String location = emptyToNull(sc.nextLine().trim());
+        System.out.print("  Facility ID [blank if none/TBA]: ");
+        String facilityInput = sc.nextLine().trim();
+        Integer facilityId = facilityInput.isBlank() ? null : readInt(facilityInput);
+        System.out.print("  Approval Status [Pending/Approved/Rejected]: ");
+        String status = normalizeChoice(sc.nextLine().trim(), "Pending", "Approved", "Rejected");
+
+        if (activityName.isBlank() || !eventDate.matches("\\d{4}-\\d{2}-\\d{2}") || status == null) {
+            System.out.println("  [INPUT ERROR] Activity name, valid date, and valid approval status are required.");
+            return;
+        }
+        if (!facilityInput.isBlank() && facilityId == null) {
+            System.out.println("  [INPUT ERROR] Facility ID must be numeric.");
+            return;
+        }
+        if (eventTime != null && !eventTime.matches("\\d{2}:\\d{2}:\\d{2}")) {
+            System.out.println("  [INPUT ERROR] Time must follow HH:MM.");
+            return;
+        }
+
+        String facilityCheck = "SELECT COUNT(*) FROM facility WHERE facility_id = ?";
+        String sql = """
+            INSERT INTO activity
+                (facility_id, activity_name, event_type, event_date, event_time, location,
+                 requester_id, approved_by, approval_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+
+        try (Connection conn = Database.getConnection()) {
+            if (facilityId != null) {
+                try (PreparedStatement check = conn.prepareStatement(facilityCheck)) {
+                    check.setInt(1, facilityId);
+                    try (ResultSet rs = check.executeQuery()) {
+                        if (rs.next() && rs.getInt(1) == 0) {
+                            System.out.println("  [VALIDATION ERROR] Facility ID not found.");
+                            return;
+                        }
+                    }
+                }
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                if (facilityId == null) ps.setNull(1, Types.INTEGER); else ps.setInt(1, facilityId);
+                ps.setString(2, activityName);
+                ps.setString(3, eventType);
+                ps.setString(4, eventDate);
+                ps.setString(5, eventTime);
+                ps.setString(6, location);
+                ps.setInt(7, user.userId);
+                if (status.equals("Approved")) ps.setInt(8, user.userId); else ps.setNull(8, Types.INTEGER);
+                ps.setString(9, status);
+
+                int affected = ps.executeUpdate();
+                if (affected > 0) {
+                    try (ResultSet keys = ps.getGeneratedKeys()) {
+                        if (keys.next()) {
+                            System.out.println("  Activity/event record created. New Activity ID: " + keys.getInt(1));
+                        } else {
+                            System.out.println("  Activity/event record created.");
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    public static void markBorrowRecordOverdue(Scanner sc) {
+        System.out.println("\n--- MARK BORROW RECORD AS OVERDUE ---");
+        System.out.print("  Enter Borrow ID: ");
+        Integer borrowId = readInt(sc.nextLine().trim());
+        if (borrowId == null) {
+            System.out.println("  [INPUT ERROR] Please enter a valid Borrow ID.");
+            return;
+        }
+
+        String checkSql = "SELECT status FROM borrow_record WHERE borrow_id = ?";
+        String updateSql = """
+            UPDATE borrow_record
+            SET status = 'Overdue', remarks = COALESCE(remarks, 'Marked overdue by custodian.')
+            WHERE borrow_id = ? AND status = 'Borrowed'
+            """;
+
+        try (Connection conn = Database.getConnection()) {
+            try (PreparedStatement check = conn.prepareStatement(checkSql)) {
+                check.setInt(1, borrowId);
+                try (ResultSet rs = check.executeQuery()) {
+                    if (!rs.next()) {
+                        System.out.println("  [VALIDATION ERROR] Borrow record not found.");
+                        return;
+                    }
+                    String status = rs.getString("status");
+                    if (!"Borrowed".equals(status)) {
+                        System.out.println("  [VALIDATION ERROR] Only records with status 'Borrowed' can be marked as overdue. Current status: " + status);
+                        return;
+                    }
+                }
+            }
+
+            try (PreparedStatement update = conn.prepareStatement(updateSql)) {
+                update.setInt(1, borrowId);
+                int affected = update.executeUpdate();
+                System.out.println("  Borrow record marked overdue. Affected row/s: " + affected);
+            }
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    public static void syncItemAvailability() {
+        System.out.println("\n--- SYNC ITEM AVAILABILITY WITH ACTIVE BORROW RECORDS ---");
+        String markBorrowed = """
+            UPDATE item
+            SET availability_status = 'Borrowed'
+            WHERE item_id IN (
+                SELECT borrowed_items.item_id
+                FROM (
+                    SELECT DISTINCT bi.item_id
+                    FROM borrow_item bi
+                    JOIN borrow_record br ON bi.borrow_id = br.borrow_id
+                    WHERE br.status IN ('Borrowed', 'Overdue')
+                ) borrowed_items
+            )
+            """;
+        String markAvailable = """
+            UPDATE item
+            SET availability_status = 'Available'
+            WHERE item_id NOT IN (
+                SELECT borrowed_items.item_id
+                FROM (
+                    SELECT DISTINCT bi.item_id
+                    FROM borrow_item bi
+                    JOIN borrow_record br ON bi.borrow_id = br.borrow_id
+                    WHERE br.status IN ('Borrowed', 'Overdue')
+                ) borrowed_items
+            )
+            AND availability_status = 'Borrowed'
+            """;
+
+        try (Connection conn = Database.getConnection();
+             Statement stmt = conn.createStatement()) {
+            int borrowedRows = stmt.executeUpdate(markBorrowed);
+            int availableRows = stmt.executeUpdate(markAvailable);
+            System.out.println("  Sync completed using Statement.");
+            System.out.println("  Rows marked Borrowed: " + borrowedRows);
+            System.out.println("  Rows marked Available: " + availableRows);
+        } catch (SQLException e) {
+            System.out.println("  [DB ERROR] " + e.getMessage());
+        }
+    }
+
+    private static Integer readInt(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static String normalizeChoice(String input, String... allowedValues) {
+        for (String value : allowedValues) {
+            if (value.equalsIgnoreCase(input)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String emptyToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String keepIfBlank(String input, String oldValue) {
+        return input.isBlank() ? oldValue : input;
+    }
+
+    private static String keepNullable(String input, String oldValue) {
+        return input.isBlank() ? oldValue : input;
     }
 
     private static void printLine() {
