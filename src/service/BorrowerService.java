@@ -5,7 +5,6 @@ import models.DataClasses;
 
 import java.sql.CallableStatement;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Types;
 import java.util.LinkedHashSet;
@@ -13,36 +12,29 @@ import java.util.Scanner;
 import java.util.Set;
 
 /**
- * Contains the borrower-side transaction features.
+ * Contains borrower-side transaction features.
  *
- * Borrowers can view available items, create requests, cancel pending requests,
- * view their active borrowed items/history, and update their own account details.
- * Quantity is intentionally not used because each physical item is unique through
- * item_id and barcode.
+ * Every database operation in this class uses CallableStatement. The actual SQL
+ * SELECT/INSERT/UPDATE logic is stored inside MySQL routines so the Java code
+ * acts as the application interface while the database controls the rules.
  */
 public class BorrowerService {
 
-   /** Shows only items that are valid for requesting. The SQL view already filters unavailable/borrowed items. */
+   /** Shows only items that are valid for requesting. */
    public void viewAvailableItems() {
-      // vw_available_items simplifies the SELECT by hiding the availability rules inside the database view.
-      String sql = """
-                SELECT item_id, barcode, item_name, item_type, condition_status, availability_status
-                FROM vw_available_items
-                ORDER BY item_type, item_name
-                """;
       try (Connection conn = Database.getConnection();
-           PreparedStatement ps = conn.prepareStatement(sql);
-           ResultSet rs = ps.executeQuery()) {
-         printItems(rs, "AVAILABLE ITEMS");
+           CallableStatement cs = conn.prepareCall("{CALL borrower_ViewAvailableItems()}")) {
+         try (ResultSet rs = cs.executeQuery()) {
+            printItems(rs, "AVAILABLE ITEMS");
+         }
       } catch (Exception e) {
          System.out.println("  Unable to load available items: " + AuthService.cleanMessage(e));
       }
    }
 
    /**
-    * Creates a new borrow request through a stored procedure.
-    * The procedure validates item existence, availability, duplicate pending requests,
-    * and the rule that a request must contain at least one item.
+    * Creates a borrow request. Quantity is not used because every physical item
+    * is already represented by one unique item_id and barcode.
     */
    public void createBorrowRequest(DataClasses.User user, Scanner sc) {
       System.out.println("\n  Create Borrow Request");
@@ -68,21 +60,16 @@ public class BorrowerService {
          return;
       }
 
-      // Multiple unique item IDs may be entered, but no quantity is needed because each item has its own barcode.
       System.out.print("  Enter item ID/s to request (comma-separated, no quantity needed): ");
       String itemIds = normalizeItemIds(sc.nextLine());
       if (itemIds == null) return;
 
-      // Stored procedure inserts into borrow_request and request_item as one controlled transaction.
-      String sql = "{CALL borrower_CreateBorrowRequest(?, ?, ?, ?, ?)}";
       try (Connection conn = Database.getConnection();
-           // CallableStatement calls the MySQL procedure and receives the new request_id.
-           CallableStatement cs = conn.prepareCall(sql)) {
+           CallableStatement cs = conn.prepareCall("{CALL borrower_CreateBorrowRequest(?, ?, ?, ?, ?)}")) {
          cs.setInt(1, user.userId);
          cs.setString(2, purpose);
          cs.setString(3, purposeRef.isBlank() ? null : purposeRef);
          cs.setString(4, itemIds);
-         // OUT parameter returns the created request ID.
          cs.registerOutParameter(5, Types.INTEGER);
          cs.execute();
          System.out.println("  Borrow request created successfully. Request ID: " + cs.getInt(5));
@@ -93,18 +80,10 @@ public class BorrowerService {
 
    /** Displays the logged-in borrower's request records only. */
    public void viewMyRequests(DataClasses.User user) {
-      String sql = """
-                SELECT request_id, request_date, purpose, purpose_ref, status,
-                       processed_by_name, processed_date, remarks, items
-                FROM vw_borrow_requests_detailed
-                WHERE borrower_id = ?
-                ORDER BY request_date DESC, request_id DESC
-                """;
       try (Connection conn = Database.getConnection();
-           PreparedStatement ps = conn.prepareStatement(sql)) {
-         // Restricts results to the currently logged-in borrower.
-         ps.setInt(1, user.userId);
-         try (ResultSet rs = ps.executeQuery()) {
+           CallableStatement cs = conn.prepareCall("{CALL borrower_ViewMyRequests(?)}")) {
+         cs.setInt(1, user.userId);
+         try (ResultSet rs = cs.executeQuery()) {
             System.out.println("\n  MY BORROW REQUESTS");
             boolean found = false;
             while (rs.next()) {
@@ -132,11 +111,8 @@ public class BorrowerService {
          System.out.println("  Invalid request ID.");
          return;
       }
-      // Stored procedure enforces ownership and pending-status validation before cancelling.
-      String sql = "{CALL borrower_CancelRequest(?, ?)}";
       try (Connection conn = Database.getConnection();
-           // CallableStatement calls the MySQL procedure and receives the new request_id.
-           CallableStatement cs = conn.prepareCall(sql)) {
+           CallableStatement cs = conn.prepareCall("{CALL borrower_CancelRequest(?, ?)}")) {
          cs.setInt(1, requestId);
          cs.setInt(2, user.userId);
          cs.execute();
@@ -148,24 +124,12 @@ public class BorrowerService {
 
    /** Shows borrow records that are still Borrowed or Overdue. */
    public void viewActiveBorrowedItems(DataClasses.User user) {
-      String sql = """
-                SELECT borrow_id, borrow_date, purpose, status, custodian_name, items, item_count
-                FROM vw_borrow_history_details
-                WHERE borrower_id = ? AND status IN ('Borrowed', 'Overdue')
-                ORDER BY borrow_date DESC
-                """;
-      printBorrowHistory(user, sql, "ACTIVE BORROWED ITEMS");
+      printBorrowHistory(user, "{CALL borrower_ViewActiveBorrowedItems(?)}", "ACTIVE BORROWED ITEMS");
    }
 
    /** Shows the complete borrow history of the logged-in borrower. */
    public void viewBorrowHistory(DataClasses.User user) {
-      String sql = """
-                SELECT borrow_id, borrow_date, return_date, purpose, status, custodian_name, items, item_count
-                FROM vw_borrow_history_details
-                WHERE borrower_id = ?
-                ORDER BY borrow_date DESC
-                """;
-      printBorrowHistory(user, sql, "BORROW HISTORY");
+      printBorrowHistory(user, "{CALL borrower_ViewBorrowHistory(?)}", "BORROW HISTORY");
    }
 
    /** Updates editable account fields for the logged-in borrower. */
@@ -200,11 +164,8 @@ public class BorrowerService {
          return;
       }
 
-      // Procedure updates the user table and can optionally keep the current password.
-      String sql = "{CALL borrower_UpdateAccountInfo(?, ?, ?, ?, ?, ?, ?)}";
       try (Connection conn = Database.getConnection();
-           // CallableStatement calls the MySQL procedure and receives the new request_id.
-           CallableStatement cs = conn.prepareCall(sql)) {
+           CallableStatement cs = conn.prepareCall("{CALL borrower_UpdateAccountInfo(?, ?, ?, ?, ?, ?, ?)}")) {
          cs.setInt(1, user.userId);
          cs.setString(2, firstName);
          cs.setString(3, lastName);
@@ -225,13 +186,11 @@ public class BorrowerService {
       }
    }
 
-   // Shared display method used by active borrowed items and full history features.
-   private void printBorrowHistory(DataClasses.User user, String sql, String heading) {
+   private void printBorrowHistory(DataClasses.User user, String procedureCall, String heading) {
       try (Connection conn = Database.getConnection();
-           PreparedStatement ps = conn.prepareStatement(sql)) {
-         // Restricts results to the currently logged-in borrower.
-         ps.setInt(1, user.userId);
-         try (ResultSet rs = ps.executeQuery()) {
+           CallableStatement cs = conn.prepareCall(procedureCall)) {
+         cs.setInt(1, user.userId);
+         try (ResultSet rs = cs.executeQuery()) {
             System.out.println("\n  " + heading);
             boolean found = false;
             while (rs.next()) {
@@ -249,10 +208,6 @@ public class BorrowerService {
       }
    }
 
-   /**
-    * Validates and normalizes comma-separated item IDs.
-    * LinkedHashSet removes duplicate IDs while preserving the order entered by the user.
-    */
    static String normalizeItemIds(String input) {
       if (input == null || input.trim().isBlank()) {
          System.out.println("  At least one item must be selected.");
@@ -274,13 +229,12 @@ public class BorrowerService {
       }
       StringBuilder sb = new StringBuilder();
       for (Integer id : ids) {
-         if (sb.length() > 0) sb.append(',');
+         if (!sb.isEmpty()) sb.append(',');
          sb.append(id);
       }
       return sb.toString();
    }
 
-   // Safely converts text input to Integer; returns null instead of crashing on invalid input.
    static Integer readInt(String value) {
       try {
          return Integer.parseInt(value.trim());
@@ -289,7 +243,6 @@ public class BorrowerService {
       }
    }
 
-   // Used by update forms: blank input means keep the current value.
    static String keepOrNew(String input, String current, int maxLength, String label) {
       String value = input.trim().isBlank() ? current : input.trim();
       if (value != null && value.length() > maxLength) {
@@ -299,7 +252,6 @@ public class BorrowerService {
       return value;
    }
 
-   // Shared item display helper used by Borrower, Custodian, and Admin views.
    static void printItems(ResultSet rs, String heading) throws Exception {
       System.out.println("\n  " + heading);
       boolean found = false;
@@ -312,7 +264,6 @@ public class BorrowerService {
       if (!found) System.out.println("  No items found.");
    }
 
-   // Converts null/blank database values into N/A for cleaner console output.
    static String nvl(String value) {
       return value == null || value.isBlank() ? "N/A" : value;
    }
