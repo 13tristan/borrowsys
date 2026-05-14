@@ -60,7 +60,7 @@ public class BorrowerService {
          return;
       }
 
-      System.out.print("  Enter item ID/s to request (comma-separated, no quantity needed): ");
+      System.out.print("  Enter item ID/s to request (comma-separated): ");
       String itemIds = normalizeItemIds(sc.nextLine());
       if (itemIds == null) return;
 
