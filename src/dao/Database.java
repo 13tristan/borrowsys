@@ -14,7 +14,7 @@ import java.sql.SQLException;
  */
 public class Database {
    // JDBC URL: connects Java to the MySQL database named 221borrowapp on localhost.
-   private static final String URL = "jdbc:mysql://localhost:3306/221borrowapp";
+   private static final String URL = "jdbc:mysql://localhost:3306/221app";
    // Default local MySQL credentials used in XAMPP/phpMyAdmin setups.
    private static final String USER = "root";
    private static final String PASSWORD = "";
@@ -34,6 +34,7 @@ public class Database {
             conn = DriverManager.getConnection(URL, USER, PASSWORD);
 
          } catch (SQLException e) {
+             e.printStackTrace();
             throw new SQLException("Failed to connect to the database.", e);
          }
       }
