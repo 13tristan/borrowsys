@@ -25,7 +25,7 @@ public class BorrowerService {
       try (Connection conn = Database.getConnection();
            CallableStatement cs = conn.prepareCall("{CALL borrower_ViewAvailableItems()}")) {
          try (ResultSet rs = cs.executeQuery()) {
-            printItems(rs, "AVAILABLE ITEMS");
+            ConsoleTable.print(rs, "AVAILABLE ITEMS");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load available items: " + AuthService.cleanMessage(e));
@@ -84,7 +84,7 @@ public class BorrowerService {
            CallableStatement cs = conn.prepareCall("{CALL borrower_ViewMyRequests(?)}")) {
          cs.setInt(1, user.userId);
          try (ResultSet rs = cs.executeQuery()) {
-            ConsoleTable.printResultSet(rs, "MY BORROW REQUESTS");
+            ConsoleTable.print(rs, "MY BORROW REQUESTS");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load requests: " + AuthService.cleanMessage(e));
@@ -179,7 +179,7 @@ public class BorrowerService {
            CallableStatement cs = conn.prepareCall(procedureCall)) {
          cs.setInt(1, user.userId);
          try (ResultSet rs = cs.executeQuery()) {
-            ConsoleTable.printResultSet(rs, heading);
+            ConsoleTable.print(rs, heading);
          }
       } catch (Exception e) {
          System.out.println("  Unable to load borrow records: " + AuthService.cleanMessage(e));
@@ -231,7 +231,7 @@ public class BorrowerService {
    }
 
    static void printItems(ResultSet rs, String heading) throws Exception {
-      ConsoleTable.printResultSet(rs, heading);
+      ConsoleTable.print(rs, heading);
    }
 
    static String nvl(String value) {

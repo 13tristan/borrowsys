@@ -19,14 +19,7 @@ import java.util.Scanner;
 public class CustodianService {
 
     public void viewPendingRequests() {
-        try (Connection conn = Database.getConnection();
-             CallableStatement cs = conn.prepareCall("{CALL custodian_ViewPendingRequests()}")) {
-            try (ResultSet rs = cs.executeQuery()) {
-                ConsoleTable.printResultSet(rs, "PENDING BORROW REQUESTS");
-            }
-        } catch (Exception e) {
-            System.out.println("  Unable to load pending requests: " + AuthService.cleanMessage(e));
-        }
+        callTable("{CALL custodian_ViewPendingRequests()}", "PENDING BORROW REQUESTS", "  Unable to load pending requests: ");
     }
 
     public void createWalkInBorrowRequest(DataClasses.User custodian, Scanner sc) {
@@ -239,46 +232,29 @@ public class CustodianService {
     }
 
     public void viewEquipmentStatus() {
-        try (Connection conn = Database.getConnection();
-             CallableStatement cs = conn.prepareCall("{CALL custodian_ViewEquipmentStatus()}")) {
-            try (ResultSet rs = cs.executeQuery()) {
-                BorrowerService.printItems(rs, "EQUIPMENT / INVENTORY STATUS");
-            }
-        } catch (Exception e) {
-            System.out.println("  Unable to load equipment status: " + AuthService.cleanMessage(e));
-        }
+        callTable("{CALL custodian_ViewEquipmentStatus()}", "EQUIPMENT / INVENTORY STATUS", "  Unable to load equipment status: ");
     }
 
     public void viewBorrowRecords() {
-        try (Connection conn = Database.getConnection();
-             CallableStatement cs = conn.prepareCall("{CALL custodian_ViewBorrowRecords()}")) {
-            try (ResultSet rs = cs.executeQuery()) {
-                ConsoleTable.printResultSet(rs, "BORROW RECORDS");
-            }
-        } catch (Exception e) {
-            System.out.println("  Unable to load borrow records: " + AuthService.cleanMessage(e));
-        }
+        callTable("{CALL custodian_ViewBorrowRecords()}", "BORROW RECORDS", "  Unable to load borrow records: ");
     }
 
     private void viewReturnEligibleRecords() {
-        try (Connection conn = Database.getConnection();
-             CallableStatement cs = conn.prepareCall("{CALL custodian_ViewReturnEligibleRecords()}")) {
-            try (ResultSet rs = cs.executeQuery()) {
-                ConsoleTable.printResultSet(rs, "BORROW RECORDS ELIGIBLE FOR RETURN");
-            }
-        } catch (Exception e) {
-            System.out.println("  Unable to load return-eligible records: " + AuthService.cleanMessage(e));
-        }
+        callTable("{CALL custodian_ViewReturnEligibleRecords()}", "BORROW RECORDS ELIGIBLE FOR RETURN", "  Unable to load return-eligible records: ");
     }
 
     public void viewUnreturnedAndIssues() {
+        callTable("{CALL custodian_ViewUnreturnedAndIssues()}", "UNRETURNED ITEMS / RETURNS WITH ISSUES", "  Unable to load records: ");
+    }
+
+    private void callTable(String procedureCall, String heading, String errorPrefix) {
         try (Connection conn = Database.getConnection();
-             CallableStatement cs = conn.prepareCall("{CALL custodian_ViewUnreturnedAndIssues()}")) {
+             CallableStatement cs = conn.prepareCall(procedureCall)) {
             try (ResultSet rs = cs.executeQuery()) {
-                ConsoleTable.printResultSet(rs, "UNRETURNED ITEMS / RETURNS WITH ISSUES");
+                ConsoleTable.print(rs, heading);
             }
         } catch (Exception e) {
-            System.out.println("  Unable to load records: " + AuthService.cleanMessage(e));
+            System.out.println(errorPrefix + AuthService.cleanMessage(e));
         }
     }
 

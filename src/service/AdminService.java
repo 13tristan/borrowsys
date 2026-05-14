@@ -11,9 +11,9 @@ import java.util.Scanner;
 /**
  * Contains administrator-side features.
  *
- * Every database call is now routed through stored procedures using
- * CallableStatement. Even read-only reports call procedures that return result
- * sets, keeping SQL logic inside the database routines.
+ * Every database call is routed through stored procedures using CallableStatement.
+ * Read-only reports call procedures that return result sets, keeping SQL logic
+ * inside the database routines.
  */
 public class AdminService {
 
@@ -21,7 +21,7 @@ public class AdminService {
       try (Connection conn = Database.getConnection();
            CallableStatement cs = conn.prepareCall("{CALL admin_ViewDashboardSummary()}")) {
          try (ResultSet rs = cs.executeQuery()) {
-            ConsoleTable.printResultSet(rs, "SYSTEM DASHBOARD SUMMARY");
+            ConsoleTable.print(rs, "SYSTEM DASHBOARD SUMMARY");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load dashboard: " + AuthService.cleanMessage(e));
@@ -111,73 +111,38 @@ public class AdminService {
    }
 
    public void viewAllUsers() {
-      try (Connection conn = Database.getConnection();
-           CallableStatement cs = conn.prepareCall("{CALL admin_ViewAllUsers()}")) {
-         try (ResultSet rs = cs.executeQuery()) {
-            ConsoleTable.printResultSet(rs, "ALL USERS");
-         }
-      } catch (Exception e) {
-         System.out.println("  Unable to load users: " + AuthService.cleanMessage(e));
-      }
+      callTable("{CALL admin_ViewAllUsers()}", "ALL USERS", "  Unable to load users: ");
    }
 
    public void viewInventoryStatus() {
-      try (Connection conn = Database.getConnection();
-           CallableStatement cs = conn.prepareCall("{CALL admin_ViewInventoryStatus()}")) {
-         try (ResultSet rs = cs.executeQuery()) {
-            BorrowerService.printItems(rs, "EQUIPMENT / INVENTORY STATUS");
-         }
-      } catch (Exception e) {
-         System.out.println("  Unable to load inventory status: " + AuthService.cleanMessage(e));
-      }
+      callTable("{CALL admin_ViewInventoryStatus()}", "EQUIPMENT / INVENTORY STATUS", "  Unable to load inventory status: ");
    }
 
    public void viewBorrowRequests() {
-      try (Connection conn = Database.getConnection();
-           CallableStatement cs = conn.prepareCall("{CALL admin_ViewBorrowRequests()}")) {
-         try (ResultSet rs = cs.executeQuery()) {
-            ConsoleTable.printResultSet(rs, "BORROW REQUESTS");
-         }
-      } catch (Exception e) {
-         System.out.println("  Unable to load borrow requests: " + AuthService.cleanMessage(e));
-      }
+      callTable("{CALL admin_ViewBorrowRequests()}", "BORROW REQUESTS", "  Unable to load borrow requests: ");
    }
 
    public void viewBorrowRecords() {
-      try (Connection conn = Database.getConnection();
-           CallableStatement cs = conn.prepareCall("{CALL admin_ViewBorrowRecords()}")) {
-         try (ResultSet rs = cs.executeQuery()) {
-            printBorrowRecords(rs);
-         }
-      } catch (Exception e) {
-         System.out.println("  Unable to load borrow records: " + AuthService.cleanMessage(e));
-      }
+      callTable("{CALL admin_ViewBorrowRecords()}", "BORROW RECORDS", "  Unable to load borrow records: ");
    }
 
    public void viewReturnRecords() {
-      try (Connection conn = Database.getConnection();
-           CallableStatement cs = conn.prepareCall("{CALL admin_ViewReturnRecords()}")) {
-         try (ResultSet rs = cs.executeQuery()) {
-            ConsoleTable.printResultSet(rs, "RETURN RECORDS / ISSUES");
-         }
-      } catch (Exception e) {
-         System.out.println("  Unable to load return records: " + AuthService.cleanMessage(e));
-      }
+      callTable("{CALL admin_ViewReturnRecords()}", "RETURN RECORDS / ISSUES", "  Unable to load return records: ");
    }
 
    private void viewCustodianAccounts() {
-      try (Connection conn = Database.getConnection();
-           CallableStatement cs = conn.prepareCall("{CALL admin_ViewCustodianAccounts()}")) {
-         try (ResultSet rs = cs.executeQuery()) {
-            ConsoleTable.printResultSet(rs, "CUSTODIAN ACCOUNTS");
-         }
-      } catch (Exception e) {
-         System.out.println("  Unable to load custodians: " + AuthService.cleanMessage(e));
-      }
+      callTable("{CALL admin_ViewCustodianAccounts()}", "CUSTODIAN ACCOUNTS", "  Unable to load custodians: ");
    }
 
-   private void printBorrowRecords(ResultSet rs) throws Exception {
-      ConsoleTable.printResultSet(rs, "BORROW RECORDS");
+   private void callTable(String procedureCall, String heading, String errorPrefix) {
+      try (Connection conn = Database.getConnection();
+           CallableStatement cs = conn.prepareCall(procedureCall)) {
+         try (ResultSet rs = cs.executeQuery()) {
+            ConsoleTable.print(rs, heading);
+         }
+      } catch (Exception e) {
+         System.out.println(errorPrefix + AuthService.cleanMessage(e));
+      }
    }
 
    private String promptRequired(Scanner sc, String label, int maxLength) {
