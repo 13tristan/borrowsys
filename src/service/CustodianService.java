@@ -22,17 +22,7 @@ public class CustodianService {
         try (Connection conn = Database.getConnection();
              CallableStatement cs = conn.prepareCall("{CALL custodian_ViewPendingRequests()}")) {
             try (ResultSet rs = cs.executeQuery()) {
-                System.out.println("\n  PENDING BORROW REQUESTS");
-                boolean found = false;
-                while (rs.next()) {
-                    found = true;
-                    System.out.printf("  Request #%d | Borrower: %-20s | Date: %s | Purpose: %s%n",
-                            rs.getInt("request_id"), rs.getString("borrower_name"),
-                            rs.getString("request_date"), rs.getString("purpose"));
-                    System.out.println("    Ref: " + BorrowerService.nvl(rs.getString("purpose_ref")));
-                    System.out.println("    Items: " + BorrowerService.nvl(rs.getString("items")));
-                }
-                if (!found) System.out.println("  No pending requests.");
+                ConsoleTable.printResultSet(rs, "PENDING BORROW REQUESTS");
             }
         } catch (Exception e) {
             System.out.println("  Unable to load pending requests: " + AuthService.cleanMessage(e));
@@ -263,19 +253,7 @@ public class CustodianService {
         try (Connection conn = Database.getConnection();
              CallableStatement cs = conn.prepareCall("{CALL custodian_ViewBorrowRecords()}")) {
             try (ResultSet rs = cs.executeQuery()) {
-                System.out.println("\n  BORROW RECORDS");
-                boolean found = false;
-                while (rs.next()) {
-                    found = true;
-                    System.out.printf("  Borrow #%d | Borrower: %-20s | Status: %-22s | Items: %d%n",
-                            rs.getInt("borrow_id"), rs.getString("borrower_name"), rs.getString("status"),
-                            rs.getInt("item_count"));
-                    System.out.println("    Custodian: " + BorrowerService.nvl(rs.getString("custodian_name"))
-                            + " | Borrowed: " + rs.getString("borrow_date")
-                            + " | Returned: " + BorrowerService.nvl(rs.getString("return_date")));
-                    System.out.println("    Items: " + BorrowerService.nvl(rs.getString("items")));
-                }
-                if (!found) System.out.println("  No borrow records found.");
+                ConsoleTable.printResultSet(rs, "BORROW RECORDS");
             }
         } catch (Exception e) {
             System.out.println("  Unable to load borrow records: " + AuthService.cleanMessage(e));
@@ -286,18 +264,7 @@ public class CustodianService {
         try (Connection conn = Database.getConnection();
              CallableStatement cs = conn.prepareCall("{CALL custodian_ViewReturnEligibleRecords()}")) {
             try (ResultSet rs = cs.executeQuery()) {
-                System.out.println("\n  BORROW RECORDS ELIGIBLE FOR RETURN");
-                boolean found = false;
-                while (rs.next()) {
-                    found = true;
-                    System.out.printf("  Borrow #%d | Borrower: %-20s | Status: %-10s | Items: %d%n",
-                            rs.getInt("borrow_id"), rs.getString("borrower_name"), rs.getString("status"),
-                            rs.getInt("item_count"));
-                    System.out.println("    Borrowed: " + rs.getString("borrow_date")
-                            + " | Purpose: " + rs.getString("purpose"));
-                    System.out.println("    Items: " + BorrowerService.nvl(rs.getString("items")));
-                }
-                if (!found) System.out.println("  No borrowed or overdue records are eligible for return.");
+                ConsoleTable.printResultSet(rs, "BORROW RECORDS ELIGIBLE FOR RETURN");
             }
         } catch (Exception e) {
             System.out.println("  Unable to load return-eligible records: " + AuthService.cleanMessage(e));
@@ -308,18 +275,7 @@ public class CustodianService {
         try (Connection conn = Database.getConnection();
              CallableStatement cs = conn.prepareCall("{CALL custodian_ViewUnreturnedAndIssues()}")) {
             try (ResultSet rs = cs.executeQuery()) {
-                System.out.println("\n  UNRETURNED ITEMS / RETURNS WITH ISSUES");
-                boolean found = false;
-                while (rs.next()) {
-                    found = true;
-                    System.out.printf("  Borrow #%d | Borrower: %-20s | Status: %-22s | Items: %d%n",
-                            rs.getInt("borrow_id"), rs.getString("borrower_name"), rs.getString("status"),
-                            rs.getInt("item_count"));
-                    System.out.println("    Borrowed: " + rs.getString("borrow_date")
-                            + " | Purpose: " + rs.getString("purpose"));
-                    System.out.println("    Items: " + BorrowerService.nvl(rs.getString("items")));
-                }
-                if (!found) System.out.println("  No unreturned items or issue records found.");
+                ConsoleTable.printResultSet(rs, "UNRETURNED ITEMS / RETURNS WITH ISSUES");
             }
         } catch (Exception e) {
             System.out.println("  Unable to load records: " + AuthService.cleanMessage(e));

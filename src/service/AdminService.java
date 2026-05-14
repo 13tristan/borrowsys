@@ -21,17 +21,7 @@ public class AdminService {
       try (Connection conn = Database.getConnection();
            CallableStatement cs = conn.prepareCall("{CALL admin_ViewDashboardSummary()}")) {
          try (ResultSet rs = cs.executeQuery()) {
-            System.out.println("\n  SYSTEM DASHBOARD SUMMARY");
-            if (rs.next()) {
-               System.out.println("  Total Users: " + rs.getInt("total_users"));
-               System.out.println("  Active Custodians: " + rs.getInt("active_custodians"));
-               System.out.println("  Total Items: " + rs.getInt("total_items"));
-               System.out.println("  Available Items: " + rs.getInt("available_items"));
-               System.out.println("  Borrowed Items: " + rs.getInt("borrowed_items"));
-               System.out.println("  Pending Requests: " + rs.getInt("pending_requests"));
-               System.out.println("  Active Borrow Records: " + rs.getInt("active_borrow_records"));
-               System.out.println("  Return Records with Damage: " + rs.getInt("damaged_returns"));
-            }
+            ConsoleTable.printResultSet(rs, "SYSTEM DASHBOARD SUMMARY");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load dashboard: " + AuthService.cleanMessage(e));
@@ -124,17 +114,7 @@ public class AdminService {
       try (Connection conn = Database.getConnection();
            CallableStatement cs = conn.prepareCall("{CALL admin_ViewAllUsers()}")) {
          try (ResultSet rs = cs.executeQuery()) {
-            System.out.println("\n  ALL USERS");
-            boolean found = false;
-            while (rs.next()) {
-               found = true;
-               System.out.printf("  [%d] %-20s | %-10s | %-25s | %-15s | %s%n",
-                       rs.getInt("user_id"),
-                       rs.getString("first_name") + " " + rs.getString("last_name"),
-                       rs.getString("user_type"), rs.getString("email"),
-                       BorrowerService.nvl(rs.getString("department")), rs.getString("account_status"));
-            }
-            if (!found) System.out.println("  No users found.");
+            ConsoleTable.printResultSet(rs, "ALL USERS");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load users: " + AuthService.cleanMessage(e));
@@ -156,19 +136,7 @@ public class AdminService {
       try (Connection conn = Database.getConnection();
            CallableStatement cs = conn.prepareCall("{CALL admin_ViewBorrowRequests()}")) {
          try (ResultSet rs = cs.executeQuery()) {
-            System.out.println("\n  BORROW REQUESTS");
-            boolean found = false;
-            while (rs.next()) {
-               found = true;
-               System.out.printf("  Request #%d | Borrower: %-20s | %s | %s | Status: %s%n",
-                       rs.getInt("request_id"), rs.getString("borrower_name"),
-                       rs.getString("request_date"), rs.getString("purpose"), rs.getString("status"));
-               System.out.println("    Ref: " + BorrowerService.nvl(rs.getString("purpose_ref")));
-               System.out.println("    Items: " + BorrowerService.nvl(rs.getString("items")));
-               System.out.println("    Processed by: " + BorrowerService.nvl(rs.getString("processed_by_name"))
-                       + " | Date: " + BorrowerService.nvl(rs.getString("processed_date")));
-            }
-            if (!found) System.out.println("  No borrow requests found.");
+            ConsoleTable.printResultSet(rs, "BORROW REQUESTS");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load borrow requests: " + AuthService.cleanMessage(e));
@@ -190,18 +158,7 @@ public class AdminService {
       try (Connection conn = Database.getConnection();
            CallableStatement cs = conn.prepareCall("{CALL admin_ViewReturnRecords()}")) {
          try (ResultSet rs = cs.executeQuery()) {
-            System.out.println("\n  RETURN RECORDS / ISSUES");
-            boolean found = false;
-            while (rs.next()) {
-               found = true;
-               System.out.printf("  Return #%d | Borrow #%d | Borrower: %-20s | Damage: %s | Date: %s%n",
-                       rs.getInt("return_id"), rs.getInt("borrow_id"), rs.getString("borrower_name"),
-                       rs.getString("has_damage"), rs.getString("actual_return_date"));
-               System.out.println("    Items: " + BorrowerService.nvl(rs.getString("items")));
-               System.out.println("    Notes: " + BorrowerService.nvl(rs.getString("condition_notes"))
-                       + " | Damage details: " + BorrowerService.nvl(rs.getString("damage_description")));
-            }
-            if (!found) System.out.println("  No return records found.");
+            ConsoleTable.printResultSet(rs, "RETURN RECORDS / ISSUES");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load return records: " + AuthService.cleanMessage(e));
@@ -212,16 +169,7 @@ public class AdminService {
       try (Connection conn = Database.getConnection();
            CallableStatement cs = conn.prepareCall("{CALL admin_ViewCustodianAccounts()}")) {
          try (ResultSet rs = cs.executeQuery()) {
-            System.out.println("\n  CUSTODIAN ACCOUNTS");
-            boolean found = false;
-            while (rs.next()) {
-               found = true;
-               System.out.printf("  [%d] %-20s | %-25s | %-15s | %s%n",
-                       rs.getInt("user_id"), rs.getString("first_name") + " " + rs.getString("last_name"),
-                       rs.getString("email"), BorrowerService.nvl(rs.getString("department")),
-                       rs.getString("account_status"));
-            }
-            if (!found) System.out.println("  No custodians found.");
+            ConsoleTable.printResultSet(rs, "CUSTODIAN ACCOUNTS");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load custodians: " + AuthService.cleanMessage(e));
@@ -229,19 +177,7 @@ public class AdminService {
    }
 
    private void printBorrowRecords(ResultSet rs) throws Exception {
-      System.out.println("\n  BORROW RECORDS");
-      boolean found = false;
-      while (rs.next()) {
-         found = true;
-         System.out.printf("  Borrow #%d | Borrower: %-20s | Custodian: %-20s | Status: %-22s | Items: %d%n",
-                 rs.getInt("borrow_id"), rs.getString("borrower_name"), rs.getString("custodian_name"),
-                 rs.getString("status"), rs.getInt("item_count"));
-         System.out.println("    Borrowed: " + rs.getString("borrow_date")
-                 + " | Returned: " + BorrowerService.nvl(rs.getString("return_date"))
-                 + " | Purpose: " + rs.getString("purpose"));
-         System.out.println("    Items: " + BorrowerService.nvl(rs.getString("items")));
-      }
-      if (!found) System.out.println("  No borrow records found.");
+      ConsoleTable.printResultSet(rs, "BORROW RECORDS");
    }
 
    private String promptRequired(Scanner sc, String label, int maxLength) {

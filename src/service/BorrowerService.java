@@ -84,19 +84,7 @@ public class BorrowerService {
            CallableStatement cs = conn.prepareCall("{CALL borrower_ViewMyRequests(?)}")) {
          cs.setInt(1, user.userId);
          try (ResultSet rs = cs.executeQuery()) {
-            System.out.println("\n  MY BORROW REQUESTS");
-            boolean found = false;
-            while (rs.next()) {
-               found = true;
-               System.out.printf("  Request #%d | %s | %s | Ref: %s | Status: %s%n",
-                       rs.getInt("request_id"), rs.getString("request_date"), rs.getString("purpose"),
-                       nvl(rs.getString("purpose_ref")), rs.getString("status"));
-               System.out.println("    Items: " + nvl(rs.getString("items")));
-               System.out.println("    Processed by: " + nvl(rs.getString("processed_by_name"))
-                       + " | Processed date: " + nvl(rs.getString("processed_date"))
-                       + " | Remarks: " + nvl(rs.getString("remarks")));
-            }
-            if (!found) System.out.println("  No requests found.");
+            ConsoleTable.printResultSet(rs, "MY BORROW REQUESTS");
          }
       } catch (Exception e) {
          System.out.println("  Unable to load requests: " + AuthService.cleanMessage(e));
@@ -191,17 +179,7 @@ public class BorrowerService {
            CallableStatement cs = conn.prepareCall(procedureCall)) {
          cs.setInt(1, user.userId);
          try (ResultSet rs = cs.executeQuery()) {
-            System.out.println("\n  " + heading);
-            boolean found = false;
-            while (rs.next()) {
-               found = true;
-               System.out.printf("  Borrow #%d | %s | Purpose: %s | Status: %s | Items: %d%n",
-                       rs.getInt("borrow_id"), rs.getString("borrow_date"), rs.getString("purpose"),
-                       rs.getString("status"), rs.getInt("item_count"));
-               System.out.println("    Custodian: " + nvl(rs.getString("custodian_name")));
-               System.out.println("    Items: " + nvl(rs.getString("items")));
-            }
-            if (!found) System.out.println("  No records found.");
+            ConsoleTable.printResultSet(rs, heading);
          }
       } catch (Exception e) {
          System.out.println("  Unable to load borrow records: " + AuthService.cleanMessage(e));
@@ -253,15 +231,7 @@ public class BorrowerService {
    }
 
    static void printItems(ResultSet rs, String heading) throws Exception {
-      System.out.println("\n  " + heading);
-      boolean found = false;
-      while (rs.next()) {
-         found = true;
-         System.out.printf("  [%d] %-25s | Barcode: %-14s | Type: %-10s | Condition: %-12s | Status: %s%n",
-                 rs.getInt("item_id"), rs.getString("item_name"), rs.getString("barcode"),
-                 rs.getString("item_type"), rs.getString("condition_status"), rs.getString("availability_status"));
-      }
-      if (!found) System.out.println("  No items found.");
+      ConsoleTable.printResultSet(rs, heading);
    }
 
    static String nvl(String value) {
